@@ -1,0 +1,12 @@
+# Local-only scoping/design documents
+meteoData_scoping_v3.md
+
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.httr-oauth
+
+# OS
+.DS_Store
