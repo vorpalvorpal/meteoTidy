@@ -169,7 +169,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 10 -- transfer engine (R/transfer.R)
       "meteoTidy_error_transfer_no_overlap",
       # Plan 10 -- fill treatments (R/fill-treatments.R)
-      "meteoTidy_error_fill_missing_site"
+      "meteoTidy_error_fill_missing_site",
+      # Plan 11 -- correction lifecycle (R/correct.R)
+      "meteoTidy_error_tier_mismatch"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -226,7 +228,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support).", # nolint: line_length_linter.
       "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3).", # nolint: line_length_linter.
       "fit_transfer() was called with source/target series that share no overlapping timestamp to fit against.", # nolint: line_length_linter.
-      "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied." # nolint: line_length_linter.
+      "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied.", # nolint: line_length_linter.
+      "correct_apply() found the selected tier disagreed with the current calibration manifest's recorded tier." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )

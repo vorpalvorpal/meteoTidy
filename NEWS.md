@@ -214,3 +214,30 @@
   caller-supplied diurnal shape so the 24 disaggregated hours exactly
   reproduce the daily total/min/max, never inventing sub-daily structure
   beyond the shape, with the shape's provenance recorded).
+- Correction -- the physical adjustments and tier framework (internal): the
+  always-on, never-fitted day-0 corrections (SCOPING section 7.1) --
+  log-wind-profile height correction (reusing `height_correct()` from
+  Plan 10, so gap-fill and correction share the identical physics) and a
+  fixed-lapse-rate temperature adjustment, both documented with their
+  stability caveats (neutral-stability wind, fixed-lapse-rate-wrong-under-
+  inversions temperature, the latter overridable including a `0` rate for
+  sites in a persistent inversion regime). A new `tier_select()` chooses
+  the correction tier from two gates that **both** must pass to promote:
+  a data-availability gate on training overlap/pair counts (with a
+  documented special case letting Open-Meteo daily-lead forecasts reach the
+  top tier from day 0 via Previous-Runs pseudo-truth pairs, SCOPING
+  section 7.2), and a skill gate (Plan 13's out-of-sample verdict) that
+  blocks promotion outright when the data volume alone would otherwise
+  justify it -- "data volume never proves the complex method stopped
+  overfitting". The correction lifecycle (`correct_apply()`) reads the
+  Plan 03 calibration manifest to decide what tier is currently active,
+  applies the physical tier at day 0, passes `model_only` variables through
+  unchanged at tier `raw`, and *enforces* (not merely advises) that the tier
+  actually applied matches the tier-selection process's answer, aborting
+  `tier_mismatch` on disagreement. `correct_apply(target = "forecast")`
+  routes corrected values through a new shrinkage hook
+  (`shrink_to_climatology()`), currently an identity placeholder for Plan
+  12's lead-dependent shrinkage; `target = "record"` never shrinks, the
+  same forecast/record distinction Plan 10 draws for gap-fill. The monthly
+  `correct_refit()` job is scaffolded as a documented skeleton awaiting
+  Plan 12's fitting functions and Plan 13's skill verdict.
