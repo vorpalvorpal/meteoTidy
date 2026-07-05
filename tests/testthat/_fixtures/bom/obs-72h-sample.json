@@ -1,0 +1,27 @@
+{
+  "observations": {
+    "header": [
+      { "refresh_message": "Test obs", "ID": "IDN60901", "name": "TEST AWS" }
+    ],
+    "data": [
+      {
+        "sort_order": 0,
+        "local_date_time_full": "20260101020000",
+        "aifstime_utc": "20251231150000",
+        "air_temp": 18.5,
+        "wind_spd_kmh": 10,
+        "wind_dir": "SW",
+        "rel_hum": 60
+      },
+      {
+        "sort_order": 1,
+        "local_date_time_full": "20260101010000",
+        "aifstime_utc": "20251231140000",
+        "air_temp": 19.0,
+        "wind_spd_kmh": 12,
+        "wind_dir": "SW",
+        "rel_hum": 58
+      }
+    ]
+  }
+}

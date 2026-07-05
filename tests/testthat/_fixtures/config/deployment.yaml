@@ -1,0 +1,16 @@
+# Deployment config (Plan 14) — global settings layered over per-site YAML.
+# Non-secret only: secrets are referenced by env-var name, never inlined.
+store_root: /data/meteo
+sites_file: sites.yaml
+refetch_windows:
+  silo: 30 days
+  openmeteo: 7 days
+adapter_defaults:
+  bom:
+    allow_web_api: false
+  openmeteo:
+    api_key_env: OPEN_METEO_KEY
+sources:
+  silo:
+    adapter: silo
+    api_key_env: SILO_EMAIL

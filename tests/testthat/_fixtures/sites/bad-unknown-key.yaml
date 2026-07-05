@@ -1,0 +1,13 @@
+sites:
+  - site_id: piggery_north
+    latitude: -34.75
+    longitude: 148.20
+    elevation: 220
+    timezone: Australia/Sydney
+    store_root: /data/meteo/piggery_north
+    # `altitude` is not a recognised key (the field is `elevation`) -> fail loud.
+    altitude: 220
+    instruments:
+      - name: thermo
+        variable: [temperature_2m, relative_humidity_2m]
+        height: 2
