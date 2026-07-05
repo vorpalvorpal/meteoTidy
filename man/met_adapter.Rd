@@ -4,11 +4,7 @@
 \alias{met_adapter}
 \title{The meteoTidy adapter contract}
 \usage{
-met_adapter(
-  source_id = character(0),
-  provides = character(0),
-  cadence = character(0)
-)
+met_adapter(source_id = character(0), provides = character(0), cadence = NULL)
 }
 \arguments{
 \item{source_id}{Single string, the \code{source} value stamped into every row
@@ -18,8 +14,11 @@ returned by this adapter's \code{\link[=fetch]{fetch()}} (e.g. \code{"site_aws"}
 \item{provides}{Character vector of dictionary variable names this adapter
 can return.}
 
-\item{cadence}{Single string, one of \code{"hourly"}, \code{"daily"}, \code{"subdaily"},
-\code{"per_issue"} — a documentation/scheduling hint, not enforced.}
+\item{cadence}{A documentation/scheduling hint, not enforced. Usually a
+single string, one of \code{"hourly"}, \code{"daily"}, \code{"subdaily"}, \code{"per_issue"}.
+An adapter may instead give a structured list when a simple label isn't
+enough — e.g. \code{source_ghcnh()} (Plan 06) sets \code{cadence = list(live = FALSE, lag_days = 7)} so the pipeline (Plan 16) can programmatically tell
+a best-effort backfill source apart from a live-head one.}
 }
 \value{
 A \code{met_adapter} S7 object. In practice, users construct a subclass

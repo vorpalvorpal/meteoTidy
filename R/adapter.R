@@ -18,8 +18,12 @@
 #'   `"openmeteo"`).
 #' @param provides Character vector of dictionary variable names this adapter
 #'   can return.
-#' @param cadence Single string, one of `"hourly"`, `"daily"`, `"subdaily"`,
-#'   `"per_issue"` — a documentation/scheduling hint, not enforced.
+#' @param cadence A documentation/scheduling hint, not enforced. Usually a
+#'   single string, one of `"hourly"`, `"daily"`, `"subdaily"`, `"per_issue"`.
+#'   An adapter may instead give a structured list when a simple label isn't
+#'   enough — e.g. `source_ghcnh()` (Plan 06) sets `cadence = list(live =
+#'   FALSE, lag_days = 7)` so the pipeline (Plan 16) can programmatically tell
+#'   a best-effort backfill source apart from a live-head one.
 #'
 #' @return A `met_adapter` S7 object. In practice, users construct a subclass
 #'   ([source_rest()], [source_file()]) rather than `met_adapter()` directly.
@@ -33,7 +37,7 @@ met_adapter <- S7::new_class(
   properties = list(
     source_id = S7::class_character,
     provides = S7::class_character,
-    cadence = S7::class_character
+    cadence = S7::class_any
   )
 )
 
