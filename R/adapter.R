@@ -175,7 +175,7 @@ check_fetch_result <- function(x, adapter, variables) {
 # error) but not yet implemented -- Plans 05-08 replace this stub with a real
 # constructor for each.
 .adapter_not_yet_implemented_names <- function() {
-  c("openmeteo", "silo", "ghcnh", "bom_forecast", "bom_obs", "ecmwf")
+  c("silo", "ghcnh", "bom_forecast", "bom_obs", "ecmwf")
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
@@ -211,6 +211,15 @@ check_fetch_result <- function(x, adapter, variables) {
     ))
   }
 
+  if (kind == "openmeteo") {
+    return(source_openmeteo(
+      product = config$product %||% "forecast",
+      models = config$models,
+      api_key_env = config$api_key_env,
+      source_id = source_name
+    ))
+  }
+
   if (kind %in% .adapter_not_yet_implemented_names()) {
     abort_meteo(
       c(
@@ -224,7 +233,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', .adapter_not_yet_implemented_names())}}."
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )
@@ -235,10 +244,10 @@ check_fetch_result <- function(x, adapter, variables) {
 #' Reads a site's `sources` configuration (see `site_sources()`, populated
 #' from YAML by Plan 02) and constructs one [met_adapter()] per entry,
 #' dispatching on each source's `adapter` field: `"rest"` builds a
-#' [source_rest()], `"file"` builds a [source_file()]. Source kinds reserved
-#' for later plans (`"openmeteo"`, `"silo"`, `"ghcnh"`, `"bom_forecast"`,
-#' `"bom_obs"`, `"ecmwf"`) abort a tested, temporary
-#' `"adapter_not_yet_implemented"` stub; anything else aborts
+#' [source_rest()], `"file"` builds a [source_file()], `"openmeteo"` builds a
+#' [source_openmeteo()]. Source kinds reserved for later plans (`"silo"`,
+#' `"ghcnh"`, `"bom_forecast"`, `"bom_obs"`, `"ecmwf"`) abort a tested,
+#' temporary `"adapter_not_yet_implemented"` stub; anything else aborts
 #' `"unknown_adapter"`.
 #'
 #' @param site A `met_site` object.

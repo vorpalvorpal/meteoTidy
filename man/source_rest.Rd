@@ -81,8 +81,10 @@ Other adapter:
 \code{\link{fetch}()},
 \code{\link{fetch_forecast}()},
 \code{\link{met_adapter}()},
+\code{\link{met_attribution}()},
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
-\code{\link{source_file}()}
+\code{\link{source_file}()},
+\code{\link{source_openmeteo}()}
 }
 \concept{adapter}

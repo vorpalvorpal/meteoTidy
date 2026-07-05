@@ -147,7 +147,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_adapter_not_yet_implemented",
       # Plan 04 — response mapping / source_rest (R/adapter-mapping.R, R/source-rest.R)
       "meteoTidy_error_bad_mapping",
-      "meteoTidy_error_unsupported_response"
+      "meteoTidy_error_unsupported_response",
+      # Plan 05 — Open-Meteo adapter (R/source-openmeteo.R, R/openmeteo-*.R)
+      "meteoTidy_error_unknown_openmeteo_product",
+      "meteoTidy_error_openmeteo_bad_response",
+      "meteoTidy_message_openmeteo_free_tier"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -191,7 +195,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "adapters_for_site() found a source config with an unrecognised adapter kind.",
       "adapters_for_site() found a source config for an adapter kind reserved for a later plan.", # nolint: line_length_linter.
       "met_mapping()/source_rest()/source_file() received a malformed mapping or adapter config.", # nolint: line_length_linter.
-      "source_rest() received a response that looks paginated (unsupported; single-page only)."
+      "source_rest() received a response that looks paginated (unsupported; single-page only).",
+      "An unrecognised Open-Meteo product name was requested.",
+      "An Open-Meteo response was missing an expected hourly/daily block.",
+      "Emitted once per fetch when an Open-Meteo request uses the free (non-commercial) tier." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )

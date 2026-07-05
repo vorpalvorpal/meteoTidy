@@ -45,9 +45,11 @@ Other adapter:
 \code{\link{apply_mapping}()},
 \code{\link{fetch_forecast}()},
 \code{\link{met_adapter}()},
+\code{\link{met_attribution}()},
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
 \code{\link{source_file}()},
+\code{\link{source_openmeteo}()},
 \code{\link{source_rest}()}
 }
 \concept{adapter}

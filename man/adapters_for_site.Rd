@@ -16,10 +16,10 @@ A named list of \code{\link[=met_adapter]{met_adapter()}} objects, named by sour
 Reads a site's \code{sources} configuration (see \code{site_sources()}, populated
 from YAML by Plan 02) and constructs one \code{\link[=met_adapter]{met_adapter()}} per entry,
 dispatching on each source's \code{adapter} field: \code{"rest"} builds a
-\code{\link[=source_rest]{source_rest()}}, \code{"file"} builds a \code{\link[=source_file]{source_file()}}. Source kinds reserved
-for later plans (\code{"openmeteo"}, \code{"silo"}, \code{"ghcnh"}, \code{"bom_forecast"},
-\code{"bom_obs"}, \code{"ecmwf"}) abort a tested, temporary
-\code{"adapter_not_yet_implemented"} stub; anything else aborts
+\code{\link[=source_rest]{source_rest()}}, \code{"file"} builds a \code{\link[=source_file]{source_file()}}, \code{"openmeteo"} builds a
+\code{\link[=source_openmeteo]{source_openmeteo()}}. Source kinds reserved for later plans (\code{"silo"},
+\code{"ghcnh"}, \code{"bom_forecast"}, \code{"bom_obs"}, \code{"ecmwf"}) abort a tested,
+temporary \code{"adapter_not_yet_implemented"} stub; anything else aborts
 \code{"unknown_adapter"}.
 }
 \seealso{
@@ -28,9 +28,11 @@ Other adapter:
 \code{\link{fetch}()},
 \code{\link{fetch_forecast}()},
 \code{\link{met_adapter}()},
+\code{\link{met_attribution}()},
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
 \code{\link{source_file}()},
+\code{\link{source_openmeteo}()},
 \code{\link{source_rest}()}
 }
 \concept{adapter}

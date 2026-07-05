@@ -34,5 +34,25 @@
   test guard and retry/error classification (persistent `404`/`410` never
   retried, transient `429`/`5xx` retried with backoff); and
   `adapters_for_site()`, which builds a site's configured adapters and stubs
-  the not-yet-implemented provider adapters (Open-Meteo, SILO, GHCNh, BOM,
-  ECMWF) with a tested placeholder error for later plans to replace.
+  the not-yet-implemented provider adapters (SILO, GHCNh, BOM, ECMWF) with a
+  tested placeholder error for later plans to replace.
+- Acquisition — Open-Meteo (`source_openmeteo()`): one adapter covering
+  Forecast, Ensemble, Historical Weather (ERA5), Historical Forecast,
+  Previous Runs, Single Runs, and Seasonal. Historical Weather maps to
+  canonical observations honestly flagged `method = "model_fill"` (ERA5 is
+  reanalysis, not a site measurement); the forecast products map to canonical
+  forecast rows with ensemble members demultiplexed into an integer `member`
+  column, Previous Runs expressed at whole-day lead granularity, and
+  Historical Forecast rows stamped `lead_time = NA` as a documented
+  "shortest-lead proxy" marker for later correction stages. The Seasonal
+  product implements the EC46/SEAS5 splice per SCOPING §5.2: each row is
+  attributed to its underlying model (`"ec46"` for leads within the splice
+  boundary, `"seas5"` beyond it) rather than the spliced product name.
+  Licensing follows SCOPING §10: the free tier serves every product with no
+  key required (a one-time `inform_meteo()` note reminds callers it is
+  non-commercial use only); supplying `api_key_env` targets the commercial
+  host and sends the key, which is read from the named environment variable
+  at fetch time only and never stored, printed, or written into returned
+  data. The new `met_attribution()` generic exposes a source's required
+  credit line (Open-Meteo's CC-BY notice). `adapters_for_site()` now resolves
+  `"openmeteo"` source configs.
