@@ -131,7 +131,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_duplicate_site_id",
       # Plan 02 — site YAML (R/site-yaml.R)
       "meteoTidy_error_inline_secret",
-      "meteoTidy_error_unknown_config_key"
+      "meteoTidy_error_unknown_config_key",
+      # Plan 03 — storage layer (R/store.R, R/store-calib.R)
+      "meteoTidy_error_unknown_store_table",
+      "meteoTidy_error_calib_not_found"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -163,7 +166,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A met_sites element is not a met_site object.",
       "A met_sites collection has duplicate site_id values.",
       "A site YAML sources entry has a literal secret value instead of a *_env/*_keyring reference.", # nolint: line_length_linter.
-      "A site YAML file has an unrecognised top-level or site-level key."
+      "A site YAML file has an unrecognised top-level or site-level key.",
+      "store_compact() was asked to compact a table name it does not recognise.",
+      "calib_read() found no calibration manifest row for the requested key/version."
     ),
     stringsAsFactors = FALSE
   )
