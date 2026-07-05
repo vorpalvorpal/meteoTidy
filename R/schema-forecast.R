@@ -67,17 +67,26 @@ new_forecast <- function(df) {
     )
   }
 
-  expected_lead <- as.numeric(difftime(df$valid_time, df$issue_time, units = "hours"))
-  actual_lead <- as.numeric(df$lead_time, units = "hours")
-  if (!isTRUE(all.equal(expected_lead, actual_lead, tolerance = 1e-6))) {
-    abort_meteo(
-      c(
-        "{.field lead_time} is inconsistent with {.code valid_time - issue_time}.",
-        "i" = "Expected lead time{?s} (hours): {.val {expected_lead}}",
-        "x" = "Got: {.val {actual_lead}}"
-      ),
-      class = "lead_inconsistent"
-    )
+  # A row with lead_time = NA is the Historical-Forecast "shortest-lead proxy"
+  # convention (Plan 05, SCOPING §7.2): its issue_time is not resolvable, so
+  # there is nothing to check consistency against. Only rows that DO claim a
+  # lead_time are held to the valid_time - issue_time identity.
+  has_lead <- !is.na(df$lead_time)
+  if (any(has_lead)) {
+    expected_lead <- as.numeric(difftime(df$valid_time, df$issue_time, units = "hours"))
+    actual_lead <- as.numeric(df$lead_time, units = "hours")
+    mismatch <- has_lead & abs(expected_lead - actual_lead) > 1e-6
+    if (any(mismatch)) {
+      idx <- which(mismatch)[1] # nolint: object_usage_linter. used via cli glue-interpolation below
+      abort_meteo(
+        c(
+          "{.field lead_time} is inconsistent with {.code valid_time - issue_time}.",
+          "i" = "Expected lead time (hours): {.val {expected_lead[idx]}}",
+          "x" = "Got: {.val {actual_lead[idx]}}"
+        ),
+        class = "lead_inconsistent"
+      )
+    }
   }
 
   key <- df[c(
