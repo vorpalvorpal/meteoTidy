@@ -4,12 +4,18 @@
 \alias{resolve_station}
 \title{Resolve a site's external station/grid identifier for an adapter}
 \usage{
-resolve_station(adapter, site)
+resolve_station(adapter, site, ...)
 }
 \arguments{
 \item{adapter}{A \code{\link[=met_adapter]{met_adapter()}} subclass instance.}
 
 \item{site}{A \code{met_site} object.}
+
+\item{...}{Passed on to specific methods. \code{source_ghcnh()} (Plan 06)
+accepts \code{n} here: how many nearest stations to resolve. \code{n = 1}
+(default) sets \code{c("ghcnh", "station_id")} and
+\code{c("ghcnh", "distance_km")}; \code{n > 1} additionally sets
+\code{c("ghcnh", "station_ids")} to the \code{n} nearest ids, ascending distance.}
 }
 \value{
 A \code{met_site} object (possibly with \code{resolved} updated).
@@ -32,7 +38,10 @@ Other adapter:
 \code{\link{met_attribution}()},
 \code{\link{met_mapping}()},
 \code{\link{source_file}()},
+\code{\link{source_ghcnh}()},
 \code{\link{source_openmeteo}()},
-\code{\link{source_rest}()}
+\code{\link{source_rest}()},
+\code{\link{source_silo}()},
+\code{\link{station_coverage}()}
 }
 \concept{adapter}

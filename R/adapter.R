@@ -118,15 +118,20 @@ S7::method(fetch_forecast, met_adapter) <- function(
 #'
 #' @param adapter A [met_adapter()] subclass instance.
 #' @param site A `met_site` object.
+#' @param ... Passed on to specific methods. `source_ghcnh()` (Plan 06)
+#'   accepts `n` here: how many nearest stations to resolve. `n = 1`
+#'   (default) sets `c("ghcnh", "station_id")` and
+#'   `c("ghcnh", "distance_km")`; `n > 1` additionally sets
+#'   `c("ghcnh", "station_ids")` to the `n` nearest ids, ascending distance.
 #'
 #' @return A `met_site` object (possibly with `resolved` updated).
 #' @family adapter
 #' @export
-resolve_station <- S7::new_generic("resolve_station", "adapter", function(adapter, site) {
+resolve_station <- S7::new_generic("resolve_station", "adapter", function(adapter, site, ...) {
   S7::S7_dispatch()
 })
 
-S7::method(resolve_station, met_adapter) <- function(adapter, site) {
+S7::method(resolve_station, met_adapter) <- function(adapter, site, ...) {
   site
 }
 
@@ -176,10 +181,11 @@ check_fetch_result <- function(x, adapter, variables) {
 }
 
 # Adapter names that are recognised (so they get a specific, tested stub
-# error) but not yet implemented -- Plans 05-08 replace this stub with a real
-# constructor for each.
+# error) but not yet implemented -- Plans 07-08 replace this stub with a real
+# constructor for each. "silo"/"ghcnh" moved out of this list in Plan 06,
+# which wires them to real constructors below.
 .adapter_not_yet_implemented_names <- function() {
-  c("silo", "ghcnh", "bom_forecast", "bom_obs", "ecmwf")
+  c("bom_forecast", "bom_obs", "ecmwf")
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
@@ -224,6 +230,18 @@ check_fetch_result <- function(x, adapter, variables) {
     ))
   }
 
+  if (kind == "silo") {
+    return(source_silo(
+      api_key_env = config$api_key_env,
+      dataset = config$dataset %||% "patched_point",
+      source_id = source_name
+    ))
+  }
+
+  if (kind == "ghcnh") {
+    return(source_ghcnh(source_id = source_name))
+  }
+
   if (kind %in% .adapter_not_yet_implemented_names()) {
     abort_meteo(
       c(
@@ -237,7 +255,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )
@@ -249,9 +267,10 @@ check_fetch_result <- function(x, adapter, variables) {
 #' from YAML by Plan 02) and constructs one [met_adapter()] per entry,
 #' dispatching on each source's `adapter` field: `"rest"` builds a
 #' [source_rest()], `"file"` builds a [source_file()], `"openmeteo"` builds a
-#' [source_openmeteo()]. Source kinds reserved for later plans (`"silo"`,
-#' `"ghcnh"`, `"bom_forecast"`, `"bom_obs"`, `"ecmwf"`) abort a tested,
-#' temporary `"adapter_not_yet_implemented"` stub; anything else aborts
+#' [source_openmeteo()], `"silo"` builds a [source_silo()], `"ghcnh"` builds a
+#' [source_ghcnh()]. Source kinds reserved for later plans (`"bom_forecast"`,
+#' `"bom_obs"`, `"ecmwf"`) abort a tested, temporary
+#' `"adapter_not_yet_implemented"` stub; anything else aborts
 #' `"unknown_adapter"`.
 #'
 #' @param site A `met_site` object.

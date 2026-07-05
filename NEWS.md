@@ -56,3 +56,28 @@
   data. The new `met_attribution()` generic exposes a source's required
   credit line (Open-Meteo's CC-BY notice). `adapters_for_site()` now resolves
   `"openmeteo"` source configs.
+- Acquisition — SILO & GHCNh (`source_silo()`, `source_ghcnh()`): daily
+  Australian climate series from SILO (PatchedPoint/DataDrill) via
+  `weatherOz`, and official-quality hourly observations from NCEI's
+  GHCNh dataset via `worldmet::import_ghcn_hourly()`. Every SILO daily value
+  carries its source/quality code into provenance via a new documented
+  reference table (`silo_qcode_reference()`/`silo_qcode_map()`) rather than a
+  blanket `"measured"`/`"ok"`: observed codes map to `method = "measured"`,
+  interpolated/patched codes to `"imputed"`/`"model_fill"`, and the
+  long-term-average fallback code to `qc_flag = "suspect"`; an unrecognised
+  code aborts loudly instead of silently defaulting. SILO's daily boundary is
+  mapped to the documented 9am-local-clock-time rainfall-day instant in the
+  site's IANA timezone, DST-aware. Both adapters implement `resolve_station()`
+  (SILO resolves the nearest BOM station number for PatchedPoint, or a grid
+  cell for DataDrill; GHCNh resolves the nearest station(s), optionally the
+  `n` nearest for the fill ladder) via a new shared great-circle
+  nearest-station helper (`nearest_stations()`, `R/station-resolve.R`) that
+  deduplicates catalogue entries sharing a physical-station `identity` before
+  ranking. `source_ghcnh()` exposes `station_coverage()`, a per-variable
+  completeness helper over a fixture window, and marks its cadence as
+  best-effort backfill (`list(live = FALSE, lag_days = ...)`) so the pipeline
+  never expects it to serve the live head. Both adapters read their
+  credentials (SILO's email "key"; PII, not a secret) from a named
+  environment variable at fetch/resolve time only, never storing or emitting
+  it. `adapters_for_site()` now resolves `"silo"` and `"ghcnh"` source
+  configs.

@@ -80,6 +80,9 @@ Other adapter:
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
 \code{\link{source_file}()},
-\code{\link{source_rest}()}
+\code{\link{source_ghcnh}()},
+\code{\link{source_rest}()},
+\code{\link{source_silo}()},
+\code{\link{station_coverage}()}
 }
 \concept{adapter}

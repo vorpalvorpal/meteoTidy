@@ -33,7 +33,9 @@ Imports:
     tibble,
     units,
     vctrs,
+    weatherOz (>= 2.0.2),
     withr,
+    worldmet (>= 1.0.0),
     yaml
 Suggests:
     DBI,

@@ -151,7 +151,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 05 — Open-Meteo adapter (R/source-openmeteo.R, R/openmeteo-*.R)
       "meteoTidy_error_unknown_openmeteo_product",
       "meteoTidy_error_openmeteo_bad_response",
-      "meteoTidy_message_openmeteo_free_tier"
+      "meteoTidy_message_openmeteo_free_tier",
+      # Plan 06 — SILO/GHCNh adapters (R/silo-qcode.R, R/source-silo.R,
+      # R/source-ghcnh.R, R/station-resolve.R)
+      "meteoTidy_error_unknown_silo_code",
+      "meteoTidy_error_unresolved_station"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -198,7 +202,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "source_rest() received a response that looks paginated (unsupported; single-page only).",
       "An unrecognised Open-Meteo product name was requested.",
       "An Open-Meteo response was missing an expected hourly/daily block.",
-      "Emitted once per fetch when an Open-Meteo request uses the free (non-commercial) tier." # nolint: line_length_linter.
+      "Emitted once per fetch when an Open-Meteo request uses the free (non-commercial) tier.", # nolint: line_length_linter.
+      "silo_qcode_map() received a SILO source/quality code outside the documented reference table.", # nolint: line_length_linter.
+      "fetch() was called on a station-resolving adapter (silo/ghcnh) before resolve_station() populated the site's resolved-ID cache." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )
