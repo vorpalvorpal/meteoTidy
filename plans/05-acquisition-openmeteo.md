@@ -37,9 +37,11 @@ issuance because there is no seasonal issue-time archive), §7.2 (what each
 training endpoint can support: Previous Runs = daily-lead pairs from ~2024;
 Single Runs = shallow, retention unverified → §14 task; Historical Forecast =
 shortest-lead stitched series, issue time not resolvable), §10 (licensing:
-free tier non-commercial < 10 000 calls/day no key; commercial + historical need
-a key; CC-BY attribution; **accept a key cleanly, document the boundary, never
-assume free**), §3.1 (request canonical units — km/h footgun).
+free tier non-commercial < 10 000 calls/day no key; commercial use needs a paid
+plan + key, with historical/climate/ensemble/satellite-radiation on Professional
+and above *among the paid plans*; CC-BY attribution; **accept a key cleanly,
+document the boundary, never assume free**), §3.1 (request canonical units —
+km/h footgun).
 
 ## File layout
 
@@ -71,14 +73,20 @@ source_id = "openmeteo", ...)`:
   the model list in `openmeteo-endpoints.R` as the single extensible source of
   truth, and never present the built-in list as exhaustive).
 - `api_key_env` names the env var holding a commercial key. **The request always
-  sends the key when the env var is set**; when unset, it uses the free host but
-  the object records `commercial = FALSE` and a one-time `inform_meteo()` note
-  that the free tier is non-commercial (SCOPING §10). The **Professional-tier
-  products — historical, climate, ensemble, seasonal, and satellite-radiation**
-  (verified against Open-Meteo's Pricing page, 2026-07-05) — **require** a key
-  host: if `api_key_env` is unset for those, abort class `"openmeteo_key_required"`
-  with the licensing explanation (never silently hit an endpoint the free tier
-  can’t serve).
+  sends the key when the env var is set** (and targets the `customer-` host);
+  when unset, it uses the free host and the object records `commercial = FALSE`
+  with a one-time `inform_meteo()` note that the free tier is licensed for
+  **non-commercial use only** (SCOPING §10). **No product aborts for lack of a
+  key** — the free tier serves every product this adapter wraps, including
+  historical and ensemble; SCOPING §10's "Professional tier and above" is a
+  boundary *within the commercial plans* (which paid plan a commercial
+  deployment needs), not a technical key gate. Spell the boundary out in the
+  roxygen: commercial deployments need a paid plan, and the historical /
+  climate / ensemble / satellite-radiation APIs need the Professional tier or
+  above among those plans. (This corrects an earlier draft of this plan that
+  aborted `"openmeteo_key_required"` on keyless historical/ensemble requests —
+  that behaviour contradicted SCOPING §2 "anonymous/free channels only in v1"
+  and §9's day-0 ERA5 / Previous-Runs backfill, and misread §10.)
 - `provides` = the dictionary variables Open-Meteo can serve for that product.
 
 ### Endpoints & params (`R/openmeteo-endpoints.R`)
@@ -158,7 +166,8 @@ All tests replay recorded fixtures; **no live calls** (Plan 04 no-net guard).
 - 51 members present; summary `stat` rows validate; `member`/`stat` never both set.
 
 ### `test-source-openmeteo-licensing.R`
-- Historical product with no `api_key_env` set aborts `"openmeteo_key_required"`.
+- A keyless historical/ensemble request targets the **free** host and succeeds
+  (no key gate), emitting the one-time non-commercial notice.
 - With `api_key_env` set (`withr::local_envvar`), the request targets the
   commercial host and sends the key; the key is **absent** from the adapter’s
   print/`format()` output and from any returned provenance.

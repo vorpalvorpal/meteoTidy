@@ -72,9 +72,10 @@ source_id = "silo")`:
   calls (SCOPING §11). Never write it into provenance/Parquet.
 - `fetch()` calls the appropriate `weatherOz` function for the window/variables,
   then maps columns → dictionary variables with `to_canonical()`. SILO is daily,
-  so `datetime_utc` is the daily-boundary instant in **local standard time**
-  represented in UTC (SCOPING §3 timezone rule) — document precisely which
-  instant a SILO “day” maps to (the 9am rainfall-day convention) and keep it
+  so `datetime_utc` is the daily-boundary instant in **local clock time**
+  (the site’s IANA timezone, DST-inclusive) represented in UTC (SCOPING §3
+  timezone rule) — document precisely which instant a SILO “day” maps to (the
+  9am rainfall-day convention, which shifts by an hour under DST) and keep it
   consistent with Plan 10’s daily aggregation.
 - **Quality codes → provenance:** each SILO value carries a source/quality code.
   Map it (via `R/silo-qcode.R`) to `method` and `qc_flag`: observed codes →
@@ -123,7 +124,9 @@ All tests replay recorded `weatherOz`/`worldmet` return frames via
 
 ### `test-source-silo.R`
 - A recorded PatchedPoint frame → canonical daily obs; `expect_canonical_obs()`;
-  units converted; the daily-boundary instant is the documented LST 9am mapping.
+  units converted; the daily-boundary instant is the documented 9am
+  local-clock-time mapping — include a DST-period date where the UTC instant
+  shifts by an hour relative to winter.
 - `resolve_station()` fills `site@resolved$silo` and returns a new site.
 - The email is read from the named env var and never appears in the output rows.
 

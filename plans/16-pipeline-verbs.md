@@ -95,8 +95,9 @@ watermark.
 
 Per site (SCOPING §9): fetch/refresh **all** forecasts (Open-Meteo incl. seasonal
 EC46+SEAS5, BOM) and `archive_forecasts()`; extend `history_hourly` (AWS + QC +
-fill); pull GHCNh backfill (respecting its lag) into `history_hourly`; refresh the
-`history_daily` tail from SILO — using the **refetch window** so SILO revisions
+fill + Plan 10 aggregation/product build); pull GHCNh backfill (respecting its
+lag) into `history_hourly`; refresh the `history_daily` tail from SILO via
+Plan 10's SILO+AWS compositing — using the **refetch window** so SILO revisions
 supersede (Plan 03/06). Advance the daily watermarks per source.
 
 ### `met_refit()` (`R/met-refit.R`) — monthly

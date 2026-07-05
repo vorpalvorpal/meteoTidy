@@ -7,6 +7,11 @@ QC-, schema- and verification-layer revisions following technical review; then
 a research pass resolving the §14 open questions (name availability, weatherBOM
 licence, meteoHazard units, worldmet/GHCNh, Open-Meteo APIs, ECMWF/GRIB) with
 findings folded into §5–§14.
+**Revised again:** 2026-07-05 (post-plan review) — daily boundary corrected
+from local standard time to **local clock time** (§3, matching BOM/SILO
+practice); §3.1 wide contract completed against a fresh meteoHazard clone
+(`pressure_msl`, layered soil moisture, hub-height wind directions); CRAN
+submission de-scoped (§12); curated-product assembly assigned to Plan 10.
 **Repository:** <https://github.com/vorpalvorpal/meteoTidy> (tracked in-repo as of 2026-07-05).
 
 ---
@@ -70,7 +75,7 @@ layer. The DESCRIPTION should make this split explicit.
   with a widening helper that emits the Open-Meteo-named wide hourly table
   meteoHazard consumes (§3.1). Observations are stored at native resolution
   (e.g. 10-minute logger data); the curation layer aggregates to the hourly
-  and LST-daily products. Long format is what makes multi-source provenance,
+  and local-day daily products. Long format is what makes multi-source provenance,
   Parquet partitioning, and dashboard queries clean.
 - **Canonical variable dictionary** — internal names + canonical units + valid
   ranges + **statistical class** (linear / circular / bounded / intermittent /
@@ -87,14 +92,15 @@ layer. The DESCRIPTION should make this split explicit.
 
   The dictionary is **user-extensible** (registering a variable supplies
   name, units, ranges, and both classes); built-ins cover the §3.1 contract
-  plus the variables the site risk models already consume (soil moisture,
-  CAPE, UV index, MSL pressure).
+  plus the variables the site risk models already consume (layered soil
+  moisture, CAPE, UV index, MSL pressure).
 - **Forecast archive table** —
   `(site_id, source, model, issue_time, valid_time, lead_time, member, variable, value)`.
   `model` is nullable (the edited BOM forecast product has no model name).
   `member` is a nullable *integer*: `NA` for deterministic forecasts, the
   member number for ensembles. Summary statistics (`"mean"`, `"p10"`, …) live
-  in a separate `stat` column (exactly one of `member`/`stat` is non-NA) —
+  in a separate `stat` column (never both non-NA; deterministic rows have both
+  `NA`) —
   overloading `member` with reserved strings would force the column to
   string type and conflate data with derived statistics. The member/stat
   scheme is what lets long-range ensemble products (§5.2) share the
@@ -110,42 +116,59 @@ layer. The DESCRIPTION should make this split explicit.
   trustworthy" and make measured-data-only filters depend on two columns
   agreeing.
 - **Timezone rule** — storage and arithmetic in UTC. Site-local time appears
-  only for display and at the daily-aggregate boundary, where it is
-  specifically **local standard time (no DST)**: SILO and BOM daily values
-  (notably the 9am rainfall day) are defined on fixed-offset local standard
-  time, and applying civil time would misalign one hour of daily aggregates
-  twice a year.
+  only for display and at the daily-aggregate boundary, where it is **local
+  clock time (civil time, DST-inclusive — corrected 2026-07-05; an earlier
+  draft wrongly said local standard time)**: BOM's 9am observation has been
+  made at local clock time since 1973/74 (BOM's DST-observing-practice notes
+  record the earlier variations) and SILO inherits that convention, so the
+  9am rain day shifts by an hour with DST in the states that observe it.
+  Daily aggregation therefore uses the site's IANA timezone directly — DST
+  transitions give 23/25-hour days, matching the source products — whereas a
+  fixed standard-time offset would sit one hour off the SILO/BOM day for the
+  whole DST half-year. Pre-1970s records observed under other conventions
+  are a known historical wrinkle, not a design driver.
 
 ### 3.1 The meteoHazard wide contract (load-bearing)
 
 meteoHazard's odour / dust / litter pipelines consume a wide hourly table with
 these exact Open-Meteo-named columns (verified against meteoHazard's current
-`R/` sources on 2026-07-05 — note `direct_radiation` and `diffuse_radiation`
-are required by `odour-ventilation.R`, `odour_exposure.R`, `odour_hazard.R`,
-and `generate_twl.R`):
+`R/` sources on 2026-07-05, and **re-verified against a fresh clone the same
+day — the re-check found the original list incomplete**: `odour_hazard()`
+*requires* `pressure_msl` and the layered `soil_moisture_0_to_1cm` /
+`soil_moisture_1_to_3cm` (litter/dust hazard also use the 0–1 cm layer), and
+`ventilation_state()` optionally consumes `wind_direction_80m/120m/180m` for
+overnight residual-wind. `direct_radiation` and `diffuse_radiation` are
+required by `odour-ventilation.R`, `odour_exposure.R`, `odour_hazard.R`, and
+`generate_twl.R`):
 
 ```
 time (UTC), temperature_2m, relative_humidity_2m, surface_pressure,
-precipitation, cloud_cover, direct_radiation, diffuse_radiation,
-wind_speed_10m, wind_direction_10m, wind_gusts_10m,
-wind_speed_80m, wind_speed_120m, wind_speed_180m, boundary_layer_height
+pressure_msl, precipitation, cloud_cover, direct_radiation,
+diffuse_radiation, wind_speed_10m, wind_direction_10m, wind_gusts_10m,
+wind_speed_80m, wind_direction_80m, wind_speed_120m, wind_direction_120m,
+wind_speed_180m, wind_direction_180m, boundary_layer_height,
+soil_moisture_0_to_1cm, soil_moisture_1_to_3cm
 ```
 
 The contract pins **units as well as names** (confirmed against meteoHazard's
 `R/openmeteo.R` and downstream sources, 2026-07-05 — wind **m/s**, temperature
 **°C**, pressure **hPa**, precipitation **mm**, radiation **W/m²**, RH/cloud
-**%**, direction **degrees**, BLH **m**; these match the variable dictionary):
+**%**, direction **degrees**, BLH **m**, soil moisture **m³/m³**; these match
+the variable dictionary):
 Open-Meteo's API **defaults to km/h** wind speeds, so a name-only contract
 carries a silent unit-mismatch failure mode — adapters must request
 `wind_speed_unit=ms` explicitly (meteoHazard already hardcodes exactly this),
 and the widening helper enforces canonical units from the variable dictionary.
 Note meteoHazard consumes both `surface_pressure` (via `generate_twl()`) and
-`pressure_msl` (via `odour_hazard()`), both in hPa; both are dictionary
-built-ins.
+`pressure_msl` (via `odour_hazard()`), both in hPa; both are in the wide
+contract and the dictionary.
 
-**Model-only subset:** `wind_speed_80m`, `wind_speed_120m`, `wind_speed_180m`,
-`boundary_layer_height`. No site AWS can measure these, so "best available
-truth" is undefined for them; the correction policy is in §7.3.
+**Model-only subset:** `wind_speed_80m/120m/180m`,
+`wind_direction_80m/120m/180m`, `boundary_layer_height`, and the
+`soil_moisture_*` layers (Open-Meteo model soil layers — a typical site AWS
+has no matching probe; the dictionary is user-extensible if a site gains
+one). No site AWS can measure these, so "best available truth" is undefined
+for them; the correction policy is in §7.3.
 `cloud_cover` is donor-observable (airport METAR via GHCNh) and
 `direct_radiation`/`diffuse_radiation` are derived-measurable where a
 pyranometer exists — both get partial site anchoring rather than none.
@@ -688,6 +711,12 @@ earlier concern about implying official tidyverse affiliation largely
 dissolves; the soft expectation the element still carries — tidy long
 tibbles, pipe-friendly composition — is already the design.
 
+**CRAN submission is de-scoped** (decided 2026-07-05): distribution is GitHub
+(optionally r-universe); no CRAN submission is planned. The availability and
+casing notes below are retained for collision avoidance and in case that
+decision is ever revisited — at which point the §5.1 web-API/gateway rungs
+would need a policy re-check first.
+
 - **Availability re-checked for `meteoTidy` (2026-07-05):** verified free on
   CRAN (current + archive, both casings — CRAN's case-insensitive uniqueness is
   satisfied), Bioconductor, r-universe, GitHub (only this repo), and PyPI, with
@@ -695,18 +724,19 @@ tibbles, pipe-friendly composition — is already the design.
   Meteodyn, generic "Tidy" — don't collide). The earlier sweep had tested the
   old `tidyMeteo` name; this supersedes it.
 - **Casing:** camelCase goes against the R Packages (2e) / rOpenSci
-  preference for lowercase and means `install.packages("meteotidy")` will
-  fail — a recorded, accepted trade-off. Mitigations: CRAN's
-  case-insensitive uniqueness rule prevents anyone squatting the lowercase
-  spelling once `meteoTidy` is accepted, and the README/pkgdown pages should
-  lead with the exact install command.
+  preference for lowercase — a recorded, accepted trade-off. With CRAN
+  de-scoped the `install.packages("meteotidy")` failure mode is moot; the
+  README/pkgdown pages still lead with the exact
+  `pak::pak("vorpalvorpal/meteoTidy")` install command (GitHub installs are
+  case-sensitive too).
 - **Nearest neighbours:** `tidyweather` (CRAN, Feb 2026, agricultural weather
   analysis) remains the closest semantic neighbour — expect occasional
   confusion; `weatherOz` is the functional overlap — differentiate in
   DESCRIPTION (QC/correction/archiving vs API client) and interoperate rather
   than compete.
-- **Pre-submission:** run `available::available("meteotidy")` /
-  `pak::pkg_name_check()` as a freshness check.
+- **Pre-submission (only if CRAN is ever revisited):** run
+  `available::available("meteotidy")` / `pak::pkg_name_check()` as a
+  freshness check.
 
 ## 13. Risks
 
@@ -751,7 +781,8 @@ tibbles, pipe-friendly composition — is already the design.
   (`stars` may help). Spike this early; if the driver proves insufficient for
   the ensemble files, the adapter degrades to the Open-Meteo seasonal splice and
   full ECMWF support moves post-v1.
-- **Timezone/DST** at the daily boundary (mitigated by the LST rule, §3);
+- **Timezone/DST** at the daily boundary (mitigated by matching the BOM/SILO
+  9am local-clock-time convention, §3);
   **small-sample overfitting** (mitigated by enforced tier gates plus
   skill-gated promotion, §7.1/§7.4);
   **SILO daily↔hourly disaggregation** remains genuinely hard — donor-ladder

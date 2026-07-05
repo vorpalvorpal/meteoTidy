@@ -18,6 +18,8 @@ behind the same read API.
 - Watermarks: `store_get_watermark()`, `store_set_watermark()`.
 - Revision handling: supersede logic + version columns.
 - Calibration store: `calib_write()`, `calib_read()`, `calib_manifest()`.
+- Partition compaction: `store_compact()` (SCOPING §8 — run monthly by Plan 16's
+  `met_refit()`).
 - Optional `store_connect()` returning a DuckDB/arrow connection (experimental).
 
 **Out:**
@@ -52,6 +54,7 @@ tests/testthat/test-store-forecast.R
 tests/testthat/test-store-watermark.R
 tests/testthat/test-store-revision.R
 tests/testthat/test-store-calib.R
+tests/testthat/test-store-compact.R
 tests/testthat/test-store-connect.R
 ```
 
@@ -165,6 +168,16 @@ and (b) a coefficient/mapping **Parquet** table whose columns depend on tier:
 This plan does not fit anything; it defines the storage contract Plan 12 writes
 into and Plan 11/12 read from.
 
+### Partition compaction (`R/store.R`)
+
+Incremental syncs leave many small Parquet files per partition. `store_compact(
+store_root, tables = c("observations","forecasts","forecast_aux"))` rewrites
+each partition that contains more than one file into a single file, atomically
+(write to a temp path in the partition dir, then swap). It must not change the
+readable rows in any way — current, superseded, and `as_of` reads are identical
+before and after (that invariant is the test). Called monthly by `met_refit()`
+(Plan 16); never runs implicitly.
+
 ### Optional DuckDB (`R/store-connect.R`)
 
 `store_connect(store_root, backend = c("arrow","duckdb"))` returns a connection
@@ -214,6 +227,13 @@ the rows `store_read_*` sees (same current-vs-superseded default via a view).
   the second; manifest has two rows with monotonic versions.
 - Coefficients round-trip through Parquet exactly (no `.rds`; assert file
   extension is `.parquet` and no `.rds` is created anywhere under `calibrations/`).
+
+### `test-store-compact.R`
+- Write a partition in several small appends (multiple files), `store_compact()`,
+  then assert: file count per partition is 1, and `store_read_obs()` (default,
+  `include_superseded = TRUE`, and an `as_of` read) returns exactly the same rows
+  as before compaction.
+- Compacting an already-compacted store is a no-op (idempotent).
 
 ### `test-store-connect.R`
 - `skip_if_not_installed("duckdb")`; the DuckDB path returns the same current

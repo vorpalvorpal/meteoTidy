@@ -38,8 +38,8 @@ origin; **against baselines** raw/persistence/climatology; **calibration
 diagnostics** PIT/rank/spread–error/Brier; **uncertainty on skill differences**
 block bootstrap; tier promotion requires improvement surviving the bootstrap),
 §4 (long-range verified as probabilistic — CRPS, PIT against `history_daily`;
-per-member trajectories needed for cumulative bands), §7.1 (skill-gated promotion),
-§7.3 (the consistency-pass violation rate is a red flag to surface here).
+per-member trajectories needed for cumulative bands), §7.1 (skill-gated promotion;
+the consistency-pass violation rate is a red flag to surface here).
 
 ## File layout
 
@@ -121,7 +121,7 @@ documented parameter (default from the series autocorrelation).
   skill ≤ 0 → weight 0 (fall back to climatology); high skill → weight ≈ 1
   (consumed by Plan 12 `shrinkage`).
 - `consistency_violation_rate` — surfaced from Plan 12’s consistency pass; a rising
-  rate is flagged (SCOPING §7.3 red flag).
+  rate is flagged (SCOPING §7.1 red flag).
 
 ### Report
 

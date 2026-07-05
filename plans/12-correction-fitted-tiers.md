@@ -79,6 +79,19 @@ sin/cos(2π·hod/24)`; store the regression coefficients. `apply` evaluates the
 harmonics at the target time. Document the number of harmonics as a parameter with
 a sensible default.
 
+**Annual-harmonic shrinkage (refinement of SCOPING §7.1 — call it out in code).**
+This tier runs on 1–6 months of overlap, i.e. the annual harmonic is fitted on a
+fraction of its own period; unregularized, the fitted sinusoid *extrapolates*
+into the unobserved seasons and can produce corrections there that are larger
+and wronger-signed than a plain constant. So the day-of-year amplitudes are
+**shrunk toward zero in proportion to seasonal coverage** (e.g. a ridge penalty,
+or an explicit damping factor = fraction of the annual cycle observed): with a
+full year of pairs the harmonics act at full strength; with 3 months they
+contribute only a mild tilt and the correction in untrained seasons stays near
+the annual-mean bias. Hour-of-day harmonics need no shrinkage (even one month
+contains ~30 full diurnal cycles). This is the same borrow-don't-extrapolate
+philosophy the qmap tier's cross-season pooling already mandates.
+
 ### qmap (`R/tier-qmap.R`)
 
 Empirical quantile mapping per hour block, with two review fixes:
@@ -149,10 +162,15 @@ marker that the value is experimental.
 ## Test requirements
 
 ### `test-tier-mean-bias.R`
-- A synthetic seasonally-varying bias (sign flips summer↔winter) is recovered by
-  the harmonic fit and removed on apply; a **raw-bin** fit on 4 months would
-  mis-sign the opposite season — assert the harmonic version does not (the review
-  fix, shown by construction).
+- With a **full year** of pairs: a synthetic seasonally-varying bias (sign flips
+  summer↔winter) is recovered by the harmonic fit and removed on apply — which
+  raw hour-of-day bins cannot do (the review fix, shown by construction).
+- With only **4 months** of pairs: the annual-harmonic shrinkage holds — the
+  correction applied in the untrained opposite season stays near the annual-mean
+  (constant) correction, and its error there is no worse than the raw-bin
+  baseline's; an *unshrunk* harmonic fit on the same 4 months is shown to
+  extrapolate a larger opposite-season correction (the failure the shrinkage
+  exists to prevent).
 
 ### `test-tier-qmap.R`
 - A known distributional shift is corrected within tolerance.

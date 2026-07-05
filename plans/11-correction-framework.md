@@ -86,8 +86,10 @@ higher tier (SCOPING §7.1, with the review’s skill gate):
    - `6 mo – 2 yr` → `qmap`.
    - `≥ 2 yr + archive` → `emos`.
    `training_summary` supplies the pair counts / overlap length per
-   `(source, variable, lead_bucket)` (from the Plan 04 calibration training store /
-   Plan 16 backfill). **For Open-Meteo sources, daily-lead pairs exist from day 0
+   `(source, variable, lead_bucket)` (from the SCOPING §4 calibration training
+   store — training pairs are assembled at refit time by joining the Plan 03
+   forecast archive with the curated observations; Plan 16's backfill seeds
+   both sides). **For Open-Meteo sources, daily-lead pairs exist from day 0
    via Previous Runs (SCOPING §7.2)** — so the availability gate can reach `emos`
    at daily leads immediately, trained against `history_daily` pseudo-truth; the
    truth-source distinction is recorded in provenance (SCOPING §7.1 review note).

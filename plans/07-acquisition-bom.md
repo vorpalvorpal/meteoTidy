@@ -21,8 +21,9 @@ of the edited product go to `forecast_aux`.
 - `resolve_station()` → BOM geohash / AAC / product codes, cached in the site.
 
 **Out:**
-- Paid/registration-gated services (Registered User Services) — **out of v1**
-  (SCOPING §5.1); do not implement rung 3’s ADFD.
+- Paid/registration-gated services (Registered User Services / ADFD — item 3 of
+  §5.1’s *channel inventory*, not a ladder rung) — **out of v1** (SCOPING §5.1).
+  Ladder rung 3 (the `api.bom.gov.au/apikey/v1` gateway) **is** in scope.
 - The archive-scheduling loop (Plan 16); this adapter fetches issuances on demand.
 
 ## Prerequisites
@@ -42,9 +43,10 @@ list; the compass helpers are `compass2angle()`/`angle2compass()`, **not**
 `compass_angle()`), §3 (`forecast_aux`), §13 (BOM web-API dependence is the top
 risk; graceful degradation).
 
-> The user has explicitly de-scoped CRAN acceptance, so the browser-User-Agent
-> rung stays in. Keep it **opt-in and documented as at-your-own-risk** anyway —
-> that is a correctness/ethics posture, not a packaging one.
+> CRAN submission is de-scoped (SCOPING §12, decided 2026-07-05), so the
+> browser-User-Agent rung stays in. Keep it **opt-in and documented as
+> at-your-own-risk** anyway — that is a correctness/ethics posture, not a
+> packaging one.
 
 ## File layout
 

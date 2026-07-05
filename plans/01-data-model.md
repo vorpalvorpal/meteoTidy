@@ -32,10 +32,10 @@ Plan 00.
 
 ## Background
 
-SCOPING §3 (canonical data model), §3.1 (wide contract + units note — this plan
-implements the unit pinning), §3.2 (member/stat is *this plan*; the classed
-tibble is Plan 15), §6/§7 (statistical & measurability classes drive dispatch —
-this plan only *stores* them).
+SCOPING §3 (canonical data model, incl. the member/stat rule — *this plan*),
+§3.1 (wide contract + units note — this plan implements the unit pinning),
+§3.2 (the classed tibble — Plan 15, not here), §6/§7 (statistical &
+measurability classes drive dispatch — this plan only *stores* them).
 
 ## File layout
 
@@ -133,7 +133,7 @@ implementer confirms them against the cited source:
 | `temperature_2m` | degC | -50 | 60 | linear | site_measurable |
 | `relative_humidity_2m` | % | 0 | 100 | bounded | site_measurable |
 | `dewpoint_2m` | degC | -60 | 40 | linear | derived_measurable |
-| `surface_pressure` | hPa | 800 | 1100 | linear | site_measurable |
+| `surface_pressure` | hPa | 700 | 1100 | linear | site_measurable |
 | `pressure_msl` | hPa | 870 | 1085 | linear | derived_measurable |
 | `precipitation` | mm | 0 | 500 | intermittent | site_measurable |
 | `cloud_cover` | % | 0 | 100 | bounded | donor_observable |
@@ -143,17 +143,26 @@ implementer confirms them against the cited source:
 | `wind_direction_10m` | degree | 0 | 360 | circular | site_measurable |
 | `wind_gusts_10m` | m/s | 0 | 150 | linear | site_measurable |
 | `wind_speed_80m` | m/s | 0 | 150 | linear | model_only |
+| `wind_direction_80m` | degree | 0 | 360 | circular | model_only |
 | `wind_speed_120m` | m/s | 0 | 150 | linear | model_only |
+| `wind_direction_120m` | degree | 0 | 360 | circular | model_only |
 | `wind_speed_180m` | m/s | 0 | 150 | linear | model_only |
+| `wind_direction_180m` | degree | 0 | 360 | circular | model_only |
 | `boundary_layer_height` | m | 0 | 5000 | linear | model_only |
-| `soil_moisture` | m3/m3 | 0 | 1 | bounded | model_only |
+| `soil_moisture_0_to_1cm` | m3/m3 | 0 | 1 | bounded | model_only |
+| `soil_moisture_1_to_3cm` | m3/m3 | 0 | 1 | bounded | model_only |
 | `cape` | J/kg | 0 | 8000 | linear | model_only |
 | `uv_index` | 1 | 0 | 20 | bounded | model_only |
 
-Set `circular_period = 360` for `wind_direction_10m`. Record in a comment that
-`wind_direction_10m` is corrected as joint u/v components, never quantile-mapped
-as an angle (SCOPING §6) — Plan 12 enforces it; here it is just flagged as
-circular.
+(The hub-height wind directions and the two layered soil-moisture variables
+were added when the §3.1 contract was re-verified against meteoHazard's
+sources, 2026-07-05 — `odour_hazard()` requires the soil layers and
+`pressure_msl`; `ventilation_state()` optionally consumes the directions.)
+
+Set `circular_period = 360` for **every `wind_direction_*` variable**. Record
+in a comment that wind direction is corrected as joint u/v components, never
+quantile-mapped as an angle (SCOPING §6) — Plan 12 enforces it; here it is
+just flagged as circular.
 
 ### Canonical observation table (`R/schema-obs.R`)
 
@@ -201,8 +210,8 @@ variable, value)` (SCOPING §3, revised member/stat rule):
   spliced name (SCOPING §5.2).
 - `issue_time`, `valid_time` UTC POSIXct; `lead_time` a `difftime` (or integer
   hours) = `valid_time - issue_time`; validator checks consistency.
-- **`member` is integer, `stat` is character**, and **exactly one is non-NA**
-  (SCOPING §3.2 revision): `member` = `NA` + `stat` = `NA` for deterministic;
+- **`member` is integer, `stat` is character**, and **never both non-NA**
+  (SCOPING §3, revised member/stat rule): `member` = `NA` + `stat` = `NA` for deterministic;
   `member` = k, `stat` = `NA` for ensemble member k; `member` = `NA`, `stat` in
   `c("mean","p10","p50","p90",...)` for summaries. Abort class
   `"member_stat_conflict"` if both non-NA.
@@ -251,10 +260,10 @@ variable, value)` (SCOPING §3, revised member/stat rule):
 
 ### `test-dict.R`
 - Every built-in row: unit parses under `units::as_units`; `min <= max`;
-  enums valid; `wind_direction_10m` has `circular_period == 360` and every other
-  variable has `NA`.
-- The §3.1 contract set is fully present (assert each of the 14 wide columns +
-  `time` handling is a dictionary variable, except `time` itself).
+  enums valid; every `wind_direction_*` variable has `circular_period == 360`
+  and every other variable has `NA`.
+- The §3.1 contract set is fully present (assert each of the 20 wide variable
+  columns is a dictionary variable; `time` itself is not one).
 - `met_register_variable()` adds a variable that `met_variable()` then finds;
   redefining a built-in without `overwrite` aborts `"duplicate_variable"`;
   `met_variable("nope")` aborts `"unknown_variable"`.
