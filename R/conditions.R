@@ -134,7 +134,20 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_unknown_config_key",
       # Plan 03 — storage layer (R/store.R, R/store-calib.R)
       "meteoTidy_error_unknown_store_table",
-      "meteoTidy_error_calib_not_found"
+      "meteoTidy_error_calib_not_found",
+      # Plan 04 — HTTP seam (R/http.R)
+      "meteoTidy_error_network_disabled",
+      "meteoTidy_error_http_gone",
+      "meteoTidy_error_http_client_error",
+      # Plan 04 — adapter contract (R/adapter.R)
+      "meteoTidy_error_source_not_uniform",
+      "meteoTidy_error_unrequested_variable",
+      "meteoTidy_error_no_forecast_support",
+      "meteoTidy_error_unknown_adapter",
+      "meteoTidy_error_adapter_not_yet_implemented",
+      # Plan 04 — response mapping / source_rest (R/adapter-mapping.R, R/source-rest.R)
+      "meteoTidy_error_bad_mapping",
+      "meteoTidy_error_unsupported_response"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -168,7 +181,17 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A site YAML sources entry has a literal secret value instead of a *_env/*_keyring reference.", # nolint: line_length_linter.
       "A site YAML file has an unrecognised top-level or site-level key.",
       "store_compact() was asked to compact a table name it does not recognise.",
-      "calib_read() found no calibration manifest row for the requested key/version."
+      "calib_read() found no calibration manifest row for the requested key/version.",
+      "The no-network test guard tripped: METEOTIDY_NO_NET=1 blocked a live HTTP request.",
+      "An HTTP request received a persistent failure status (404/410); never retried.",
+      "An HTTP request received a non-retryable client-error status, or exhausted its retries.", # nolint: line_length_linter.
+      "check_fetch_result() found a non-uniform source column in a fetch() result.",
+      "check_fetch_result() found a variable in a fetch() result that was not requested.",
+      "fetch_forecast() was called on an adapter that does not support forecast retrieval.",
+      "adapters_for_site() found a source config with an unrecognised adapter kind.",
+      "adapters_for_site() found a source config for an adapter kind reserved for a later plan.", # nolint: line_length_linter.
+      "met_mapping()/source_rest()/source_file() received a malformed mapping or adapter config.", # nolint: line_length_linter.
+      "source_rest() received a response that looks paginated (unsupported; single-page only)."
     ),
     stringsAsFactors = FALSE
   )

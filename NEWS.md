@@ -20,3 +20,19 @@
   observation revision/supersede policy with point-in-time (`as_of`) reads,
   partition compaction, and a calibration store that persists fitted
   coefficients as versioned Parquet tables (never `.rds`).
+- Acquisition — the adapter contract: the `met_adapter` S7 base class with
+  `fetch()`/`fetch_forecast()`/`resolve_station()` generics and a
+  `check_fetch_result()` contract check, so third parties can write their own
+  sources; the declarative `met_mapping()`/`apply_mapping()` response-mapping
+  spec (JSON path or CSV column, with unit and sensor-height metadata) that
+  enforces canonical units at the acquisition boundary; two source-agnostic
+  built-in adapters, `source_rest()` (single-page JSON/CSV REST APIs, with
+  `none`/`header`/`basic` auth reading secrets from named environment
+  variables at fetch time, never stored or printed) and `source_file()`
+  (local logger CSV/TSV drops, glob-matched and concatenated in time order);
+  the internal `.http_get()` HTTP seam (built on `httr2`) with a no-network
+  test guard and retry/error classification (persistent `404`/`410` never
+  retried, transient `429`/`5xx` retried with backoff); and
+  `adapters_for_site()`, which builds a site's configured adapters and stubs
+  the not-yet-implemented provider adapters (Open-Meteo, SILO, GHCNh, BOM,
+  ECMWF) with a tested placeholder error for later plans to replace.
