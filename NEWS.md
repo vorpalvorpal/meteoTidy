@@ -166,3 +166,51 @@
   (`store_read_obs(..., include_superseded = TRUE)`). A `model_only`
   variable (no site truth to compare against a neighbour) is never routed
   to the spatial rule and aborts loudly if called on directly.
+- Curation -- gap-fill, the shared transfer engine, and the curated products
+  (`fill_run()`): a tiered gap-fill (micro/medium/macro, SCOPING section 6)
+  built on a new shared bias-correction primitive, `fit_transfer()`/
+  `apply_transfer()` (exported: Plan 12's forecast correction wraps the same
+  engine to add lead-dependent shrinkage, but the primitive itself is
+  deliberately **skill-decay-free** -- no lead/weight/shrink argument, ever;
+  applying a fitted transfer to an early or late row of the same series
+  yields an identical correction). Both `"mean_bias"` (a constant offset)
+  and `"qmap"` (hand-rolled empirical quantile mapping via `stats::approx()`,
+  no new heavy dependency) fitting methods are supported. Each variable is
+  filled in its own statistical space (`R/fill-treatments.R`): relative
+  humidity via Magnus-Tetens dewpoint conversion (never overshoots
+  0-100%), wind direction via unit-vector interpolation (never crosses the
+  0/360 wrap through ~180 degrees), precipitation via an occurrence+amount
+  treatment (never a linear "drizzle ramp" through a dry spell), solar
+  radiation via a clear-sky index (reusing Plan 09's clear-sky model, forced
+  to zero at night), and wind speed via a log-wind-profile height
+  correction (`height_correct()`, with a documented neutral-stability
+  caveat) before any cross-station transfer. The donor ladder
+  (`rank_donors()`, BOM -> GHCNh -> ERA5 -> SILO) deduplicates candidates by
+  physical station identity (reusing Plan 06's `.dedup_by_identity()`) so a
+  station reached by two transports is never double-counted, keeping the
+  higher-priority transport on a tie; `model_only` variables (upper-level
+  winds, boundary-layer height) always skip the donor ladder entirely and
+  take the raw model series. Every filled row is stamped `qc_flag = "ok"`
+  (never the gap's inherited `missing`/`fail`) and a `method` identifying it
+  as filled (`imputed`/`donor_fill`/`model_fill`), never `measured`.
+  `fill_run()` mirrors `qc_run()`'s incremental/idempotent watermark shape
+  and writes via the store's supersede path, so a better donor arriving
+  later can supersede an earlier fill while the earlier one stays
+  retrievable for audit. This plan also assembles the curated products
+  (added to this plan's scope 2026-07-05, previously homeless in the
+  series): `aggregate_hourly()` (native resolution -> hourly, dispatched
+  per statistical class -- mean, sum for rain, vector mean for direction --
+  with a documented 75% completeness threshold), `aggregate_daily()`
+  (hourly -> daily on the local-day boundary, DST-aware, with a
+  table-driven per-variable day-window convention matching SILO's
+  documented rain-day and calendar-day windows -- a transition day is a
+  correctly-computed 23-/25-hour day), `build_history_hourly()`/
+  `build_history_daily()` (the `history_hourly`/`history_daily` products,
+  SILO as the daily base with the site's own AWS aggregate winning wherever
+  present and QC-clean, provenance always recording which leg served each
+  value -- documented as fit for operational bounds but **not** a
+  homogenized record, unfit for trend analysis across the AWS install
+  date), and `disaggregate_silo()` (the donor ladder's last rung: scales a
+  caller-supplied diurnal shape so the 24 disaggregated hours exactly
+  reproduce the daily total/min/max, never inventing sub-daily structure
+  beyond the shape, with the shape's provenance recorded).

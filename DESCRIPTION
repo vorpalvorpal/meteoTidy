@@ -26,6 +26,7 @@ Imports:
     dplyr,
     glue,
     httr2,
+    imputeTS,
     jsonlite,
     readr,
     rlang,
@@ -46,18 +47,24 @@ Suggests:
     lintr,
     terra,
     testthat (>= 3.0.0)
-Collate: 
+Collate:
     'adapter-mapping.R'
     'adapter.R'
+    'aggregate.R'
     'bom-breaker-state.R'
     'bom-parse.R'
     'bom-transport.R'
     'conditions.R'
     'dict-builtin.R'
     'dict.R'
+    'donor-ladder.R'
     'ecmwf-index.R'
     'enums.R'
+    'fill-tiers.R'
+    'fill-treatments.R'
+    'fill.R'
     'grib-read.R'
+    'history-products.R'
     'http.R'
     'meteoTidy-package.R'
     'openmeteo-endpoints.R'
@@ -71,6 +78,7 @@ Collate:
     'schema-forecast.R'
     'schema-obs.R'
     'schema.R'
+    'silo-disagg.R'
     'silo-qcode.R'
     'site-list.R'
     'site-yaml.R'
@@ -90,6 +98,7 @@ Collate:
     'store-obs.R'
     'store-watermark.R'
     'store.R'
+    'transfer.R'
     'units.R'
     'utils.R'
     'vendor-weatherbom.R'

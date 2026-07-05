@@ -165,7 +165,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_terra_required",
       "meteoTidy_error_grib_ccsds_unsupported",
       # Plan 09 -- QC engine (R/qc-spatial.R)
-      "meteoTidy_error_spatial_not_applicable"
+      "meteoTidy_error_spatial_not_applicable",
+      # Plan 10 -- transfer engine (R/transfer.R)
+      "meteoTidy_error_transfer_no_overlap",
+      # Plan 10 -- fill treatments (R/fill-treatments.R)
+      "meteoTidy_error_fill_missing_site"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -220,7 +224,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval.", # nolint: line_length_linter.
       "source_ecmwf()'s fetch_forecast() was called but the terra package is not installed.",
       "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support).", # nolint: line_length_linter.
-      "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3)." # nolint: line_length_linter.
+      "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3).", # nolint: line_length_linter.
+      "fit_transfer() was called with source/target series that share no overlapping timestamp to fit against.", # nolint: line_length_linter.
+      "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )
