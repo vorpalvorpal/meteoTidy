@@ -1,0 +1,31 @@
+Package: meteoTidy
+Title: Quality Control, Correction, and Archiving of Meteorological Data
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Robin", "Shannon", , "32329438+vorpalvorpal@users.noreply.github.com",
+           role = c("aut", "cre")),
+    person("Maurits", "Evers", role = "ctb")
+  )
+Description: Ingests meteorological observations and forecasts from multiple
+    sources, applies quality control, gap-filling, and bias correction, and
+    archives the results as a canonical, versioned Parquet store. Unlike
+    general-purpose API clients such as 'weatherOz', 'meteoTidy' does not
+    itself implement provider transports for every source; it wraps
+    'weatherOz' for 'SILO' access and layers curation, calibration, and a
+    tidy read API on top of raw observations and forecasts from several
+    providers.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Language: en-AU
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/testthat/edition: 3
+Imports:
+    cli,
+    glue,
+    rlang,
+    withr
+Suggests:
+    httptest2,
+    lintr,
+    testthat (>= 3.0.0)

@@ -1,0 +1,13 @@
+url: ~
+
+template:
+  bootstrap: 5
+
+reference:
+- title: Conditions
+  desc: The classed condition system every user-facing message goes through.
+  contents:
+  - abort_meteo
+  - warn_meteo
+  - inform_meteo
+  - meteo_conditions
