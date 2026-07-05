@@ -51,7 +51,7 @@ Dependencies flow downward; a plan may depend only on plans above it.
 | 07 | Acquisition — BOM + vendored weatherBOM | 00–04 | `source_bom_forecast()`, `source_bom_obs()`, transport ladder + circuit breaker |
 | 08 | Acquisition — ECMWF Open Data (GRIB2) | 00–04 | `source_ecmwf()`, terra/GDAL GRIB read, graceful absence |
 | 09 | Curation — QC engine | 00–03, 06 | WMO-style rules by statistical class, spatial/buddy, solar clear-sky |
-| 10 | Curation — gap-fill / transfer engine | 00–03, 09 | Tiered fill, donor dedup, shared transform machinery |
+| 10 | Curation — gap-fill, transfer engine & curated products | 00–03, 06, 09 | Tiered fill, donor dedup, shared transform machinery, hourly/daily aggregation, history products, SILO disaggregation |
 | 11 | Correction — physical adjustments & tier framework | 00–03, 10 | Day-0 physics, tier selection, calibration manifest lifecycle |
 | 12 | Correction — fitted tiers | 11 | mean-bias, `qmap`, EMOS (`crch`), MBC, lead-shrinkage, consistency pass |
 | 13 | Verification engine | 03, 11, 12 | Rolling-origin, `scoringRules`, PIT/rank/Brier, block bootstrap, skill-gated promotion |
@@ -90,7 +90,8 @@ Dependencies flow downward; a plan may depend only on plans above it.
   an adapter boundary for a dimensioned quantity.
 - **Time.** All stored timestamps are UTC `POSIXct` with `tz = "UTC"`. Local
   time appears only for display and at the daily-aggregate boundary, where it is
-  **local standard time with no DST** (a fixed offset from UTC — SCOPING §3).
+  **local clock time** — the site's IANA timezone, DST-inclusive, matching the
+  BOM/SILO 9am-day convention (SCOPING §3; DST transitions give 23/25-hour days).
   Never use `Sys.time()` / `Sys.Date()` inside package logic: take the current
   time as an injectable argument (`now = Sys.time()`) so tests can freeze it.
 - **Messaging: `cli`.** All user-facing messages, warnings, and errors go through
