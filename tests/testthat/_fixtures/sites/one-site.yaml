@@ -1,0 +1,24 @@
+sites:
+  - site_id: piggery_north
+    latitude: -34.75
+    longitude: 148.20
+    elevation: 220
+    timezone: Australia/Sydney
+    store_root: /data/meteo/piggery_north
+    instruments:
+      - name: anemometer
+        variable: [wind_speed_10m, wind_direction_10m, wind_gusts_10m]
+        height: 10
+        roughness_length: 0.03
+        displacement_height: 0
+      - name: thermo
+        variable: [temperature_2m, relative_humidity_2m]
+        height: 2
+    sources:
+      silo:
+        adapter: silo
+        api_key_env: SILO_EMAIL
+      site_aws:
+        adapter: rest
+        endpoint: "https://aws.example/api?site={site}&from={from}&to={to}"
+        token_env: PIGGERY_AWS_TOKEN

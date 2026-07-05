@@ -1,0 +1,4 @@
+store_root: /data/meteo
+sites_file: sites.yaml
+refetsh_windows:            # typo: should be refetch_windows → must fail loud
+  silo: 30 days

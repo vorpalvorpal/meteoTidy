@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<product xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.0">
+  <amoc>
+    <issue-time-utc>2026-01-01T00:00:00Z</issue-time-utc>
+  </amoc>
+  <forecast>
+    <area aac="NSW_PT131" description="Test Town" type="location">
+      <forecast-period index="0" start-time-local="2026-01-01T00:00:00+11:00"
+                       end-time-local="2026-01-02T00:00:00+11:00">
+        <element type="air_temperature_maximum" units="Celsius">30</element>
+        <element type="precipitation_range" units="mm">0 to 5</element>
+        <text type="precis">Partly cloudy.</text>
+        <text type="forecast">Partly cloudy. Medium chance of showers.</text>
+        <text type="fire_danger">High</text>
+        <text type="uv_alert">Sun protection 9:20am to 3:10pm, UV Index predicted to reach 11 [Extreme]</text>
+      </forecast-period>
+      <forecast-period index="1" start-time-local="2026-01-02T00:00:00+11:00"
+                       end-time-local="2026-01-03T00:00:00+11:00">
+        <element type="air_temperature_maximum" units="Celsius">28</element>
+        <text type="precis">Sunny.</text>
+        <text type="fire_danger">Very High</text>
+      </forecast-period>
+    </area>
+  </forecast>
+</product>

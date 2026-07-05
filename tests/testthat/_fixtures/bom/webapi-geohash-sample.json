@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "geohash": "r3gx2f",
+      "id": "Test Town",
+      "name": "Test Town",
+      "state": "NSW",
+      "latitude": -34.75,
+      "longitude": 148.20
+    }
+  ]
+}
