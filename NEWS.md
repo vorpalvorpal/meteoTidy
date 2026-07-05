@@ -136,3 +136,33 @@
   (`"json"`/`"lines"`/`"raw"`) to serve this adapter's JSON-*lines* `.index`
   sidecars and raw `.grib2` bytes. `adapters_for_site()` now resolves
   `"ecmwf"` source configs.
+- Curation -- the QC engine (`qc_run()`): ~10 WMO-style rules dispatched by a
+  variable's statistical class (range, step -- with correct wraparound for
+  circular variables like wind direction, persistence/flat-line, and a
+  climatological-bounds check), an internal-consistency rule enforcing
+  physical relations across variables at a timestamp (dewpoint must not
+  exceed temperature, relative humidity must not exceed 100%, gusts must be
+  at least the mean wind speed, direct + diffuse radiation must not exceed a
+  clear-sky ceiling), a spatial/buddy check against configured donor
+  stations (a robust MAD-based drift detector -- the strongest available
+  signal for slow sensor drift, which range/step/persistence all miss), and
+  a solar clear-sky rule applying BSRN-style physically-possible/
+  extremely-rare irradiance limits against a self-contained Ineichen-Perez
+  clear-sky model (`clear_sky_irradiance()`). The internal-consistency
+  relations live in a new shared module (`physics_constraints()`,
+  `R/physics-constraints.R`) that supports both a `"flag"` mode (used here)
+  and an `"enforce"`/clip mode reserved for Plan 12's post-correction
+  consistency pass, so the two plans share exactly one set of relations.
+  Every rule may only downgrade `qc_flag` (`ok` -> `suspect` -> `fail`),
+  never upgrade it, and every decision is appended to a new auditable
+  `qc_log` companion table (`site_id`, `datetime_utc`, `variable`, `rule`,
+  `outcome`, `detail`; `qc_log_read()`), deduplicated so repeated runs never
+  accumulate duplicate audit rows. `qc_run()` is incremental (it reads the
+  QC watermark, with a short look-back so a late-arriving donor observation
+  can still retrigger the spatial check on the recent tail) and idempotent
+  (re-running over the same window reproduces identical flags with no
+  duplicate log rows); QC flag changes are written back via the observation
+  store's supersede path, so the pre-QC flag stays retrievable for audit
+  (`store_read_obs(..., include_superseded = TRUE)`). A `model_only`
+  variable (no site truth to compare against a neighbour) is never routed
+  to the spatial rule and aborts loudly if called on directly.

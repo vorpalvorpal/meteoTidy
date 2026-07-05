@@ -163,7 +163,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_no_forecast_aux_support",
       # Plan 08 — ECMWF adapter (R/grib-read.R, R/source-ecmwf.R)
       "meteoTidy_error_terra_required",
-      "meteoTidy_error_grib_ccsds_unsupported"
+      "meteoTidy_error_grib_ccsds_unsupported",
+      # Plan 09 -- QC engine (R/qc-spatial.R)
+      "meteoTidy_error_spatial_not_applicable"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -217,7 +219,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "resolve_station() needs a BOM geohash but none is cached and allow_web_api = FALSE.",
       "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval.", # nolint: line_length_linter.
       "source_ecmwf()'s fetch_forecast() was called but the terra package is not installed.",
-      "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support)." # nolint: line_length_linter.
+      "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support).", # nolint: line_length_linter.
+      "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3)." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )
