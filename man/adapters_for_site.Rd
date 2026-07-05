@@ -19,9 +19,8 @@ dispatching on each source's \code{adapter} field: \code{"rest"} builds a
 \code{\link[=source_rest]{source_rest()}}, \code{"file"} builds a \code{\link[=source_file]{source_file()}}, \code{"openmeteo"} builds a
 \code{\link[=source_openmeteo]{source_openmeteo()}}, \code{"silo"} builds a \code{\link[=source_silo]{source_silo()}}, \code{"ghcnh"} builds a
 \code{\link[=source_ghcnh]{source_ghcnh()}}, \code{"bom_forecast"} builds a \code{\link[=source_bom_forecast]{source_bom_forecast()}},
-\code{"bom_obs"} builds a \code{\link[=source_bom_obs]{source_bom_obs()}}. Source kinds reserved for later
-plans (\code{"ecmwf"}) abort a tested, temporary \code{"adapter_not_yet_implemented"}
-stub; anything else aborts \code{"unknown_adapter"}.
+\code{"bom_obs"} builds a \code{\link[=source_bom_obs]{source_bom_obs()}}, \code{"ecmwf"} builds a
+\code{\link[=source_ecmwf]{source_ecmwf()}}. Anything else aborts \code{"unknown_adapter"}.
 }
 \seealso{
 Other adapter: 
@@ -35,6 +34,7 @@ Other adapter:
 \code{\link{resolve_station}()},
 \code{\link{source_bom_forecast}()},
 \code{\link{source_bom_obs}()},
+\code{\link{source_ecmwf}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},
 \code{\link{source_openmeteo}()},

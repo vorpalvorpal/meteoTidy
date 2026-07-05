@@ -39,6 +39,7 @@ Other adapter:
 \code{\link{resolve_station}()},
 \code{\link{source_bom_forecast}()},
 \code{\link{source_bom_obs}()},
+\code{\link{source_ecmwf}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},
 \code{\link{source_openmeteo}()},

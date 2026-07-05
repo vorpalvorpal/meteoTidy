@@ -160,7 +160,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # R/source-bom-obs.R)
       "meteoTidy_error_bom_all_transports_failed",
       "meteoTidy_error_bom_geohash_unavailable",
-      "meteoTidy_error_no_forecast_aux_support"
+      "meteoTidy_error_no_forecast_aux_support",
+      # Plan 08 — ECMWF adapter (R/grib-read.R, R/source-ecmwf.R)
+      "meteoTidy_error_terra_required",
+      "meteoTidy_error_grib_ccsds_unsupported"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -212,7 +215,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "fetch() was called on a station-resolving adapter (silo/ghcnh) before resolve_station() populated the site's resolved-ID cache.", # nolint: line_length_linter.
       "ladder_fetch() exhausted every eligible BOM transport rung for the requested product.",
       "resolve_station() needs a BOM geohash but none is cached and allow_web_api = FALSE.",
-      "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval." # nolint: line_length_linter.
+      "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval.", # nolint: line_length_linter.
+      "source_ecmwf()'s fetch_forecast() was called but the terra package is not installed.",
+      "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support)." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )

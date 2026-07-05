@@ -111,7 +111,15 @@ its byte range. To avoid downloading whole ensemble files:
 
 ### `source_ecmwf()`
 
-`source_ecmwf(stream = "eefo", resolution = "0p25", source_id = "ecmwf")`:
+> **As implemented, `stream` defaults to `"enfo"`, not `"eefo"` — see
+> "Deviation from SCOPING §5.2" at the end of this file.** `"eefo"` does not
+> exist in ECMWF's real open-data catalogue as of 2026-07-06; `"enfo"` (the
+> real medium-range ensemble, ~360h/15-day horizon, 50 perturbed members, no
+> control member) is what the shipped code actually targets.
+
+`source_ecmwf(stream = "enfo", resolution = "0p25", source_id = "ecmwf")`
+(original design below, retained for context; superseded per the deviation
+note):
 
 - **`stream = "eefo"`** is the 46-day **extended-range ensemble (101 members)** —
   the corrected identifier (the medium-range `enfo` stream stops at step 360 h,
@@ -172,3 +180,59 @@ Shared skeleton plus:
 - `terra` is in Suggests; absence is a clean, guided error, never a crash.
 - `adapters_for_site()` resolves `"ecmwf"`.
 - New condition classes registered in `meteo_conditions()`.
+
+## Deviation from SCOPING §5.2 (recorded 2026-07-06)
+
+Live verification against `https://data.ecmwf.int/forecasts/` (and its S3
+mirror, `ecmwf-forecasts` on `eu-central-1`) on 2026-07-06 found two things
+this plan and SCOPING §5.2 got wrong, per the README's "stop and flag it"
+rule for a plan/scoping disagreement:
+
+1. **`"eefo"` (the 46-day extended-range ensemble) is not present in the real
+   open-data catalogue.** The only streams that exist under `ifs/0p25/` are
+   `oper`, `enfo`, `waef`, `wave` (plus the separate `aifs-ens`/`aifs-single`
+   model families) — checked across every issue cycle for the preceding 30
+   days. SCOPING §5.2's premise ("fully open since 2025-10-01... the `eefo`
+   stream") does not hold as of this verification date. **Decision (user
+   confirmed):** `source_ecmwf()` now defaults to `stream = "enfo"` — real,
+   open today, ~360h/15-day medium-range horizon, 50 perturbed members
+   (`1..50`, **no separate control/member-0** in the open feed — also
+   verified live, contrary to this plan's original test assumptions).
+   `stream = "eefo"` remains an accepted value (untested; will 404 until/
+   unless ECMWF opens it) so the adapter picks it up with no code change if
+   it ever ships. **Net effect: `source_ecmwf()` currently provides no
+   long-range (46-day) coverage.** `source_openmeteo(product = "seasonal")`
+   (Plan 05) is the only long-range channel in practice, contradicting
+   SCOPING §5.2's "both ship in v1" — flagged here rather than silently
+   resolved; a future plan should revisit long-range coverage if/when ECMWF
+   opens an extended-range stream, or scope the seasonal splice as the sole
+   v1 long-range channel in SCOPING itself.
+2. **File layout is per-step, not per-cycle.** ECMWF Open Data ships one
+   GRIB2 + `.index` pair *per forecast step* (e.g.
+   `20260702000000-24h-enfo-ef.grib2` under
+   `<date>/<HH>z/ifs/<res>/<stream>/`), not one pair covering the whole issue
+   cycle. `R/source-ecmwf.R`'s URL building was corrected accordingly.
+
+Additional bugs the real fixture caught (all fixed in the same pass, see
+`R/grib-read.R`'s and `R/source-ecmwf.R`'s header notes for detail):
+`terra::metags()` does not expose GDAL's native GRIB band metadata (the real
+accessor is `terra::meta(rast, layers = TRUE)`); GDAL auto-converts ECMWF's
+Kelvin temperature fields to Celsius on read, so the unit must be read off
+the decoded band, not assumed to be Kelvin; the CCSDS/libaec guard
+(`.grib_check_ccsds_support()`) only tested `grib_open()`, which succeeds
+regardless of libaec support since it never touches pixel data — it now
+attempts a real point extraction; `.http_get()` (Plan 04) was JSON-only and
+could not have served the JSON-*lines* `.index` sidecar or raw `.grib2`
+bytes at all — extended with a `parse = c("json", "lines", "raw")` argument.
+
+**Environment note:** this dev machine's terra/GDAL (terra 1.8.70, bundled
+GDAL) cannot decode CCSDS/AEC-compressed pixel data (confirmed:
+`g2_unpack7: ... requires building against libaec`) — exactly the risk
+SCOPING §13 flagged. The guard now correctly turns this into
+`"grib_ccsds_unsupported"` rather than a raw GDAL error; the test suite
+detects this live (`ecmwf_ccsds_supported()`, `tests/testthat/helper-ecmwf.R`)
+and asserts whichever of the two documented outcomes is actually true, so it
+is meaningful on both a libaec-enabled and a libaec-less GDAL build. Getting a
+libaec-enabled GDAL working with `terra` in this environment (a from-source
+`terra` rebuild against a system GDAL) was deferred as a separate, larger
+piece of work (user confirmed) rather than blocking this plan.

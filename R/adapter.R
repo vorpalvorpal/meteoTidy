@@ -215,12 +215,11 @@ check_fetch_result <- function(x, adapter, variables) {
 }
 
 # Adapter names that are recognised (so they get a specific, tested stub
-# error) but not yet implemented -- Plan 08 replaces this stub with a real
-# constructor. "silo"/"ghcnh" moved out of this list in Plan 06,
-# "bom_forecast"/"bom_obs" in Plan 07, which wire them to real constructors
-# below.
+# error) but not yet implemented. "silo"/"ghcnh" moved out of this list in
+# Plan 06, "bom_forecast"/"bom_obs" in Plan 07, "ecmwf" in Plan 08, which wire
+# them to real constructors below.
 .adapter_not_yet_implemented_names <- function() {
-  c("ecmwf")
+  character(0)
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
@@ -293,6 +292,14 @@ check_fetch_result <- function(x, adapter, variables) {
     ))
   }
 
+  if (kind == "ecmwf") {
+    return(source_ecmwf(
+      stream = config$stream %||% "enfo",
+      resolution = config$resolution %||% "0p25",
+      source_id = source_name
+    ))
+  }
+
   if (kind %in% .adapter_not_yet_implemented_names()) {
     abort_meteo(
       c(
@@ -306,7 +313,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', 'ecmwf', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )
@@ -320,9 +327,8 @@ check_fetch_result <- function(x, adapter, variables) {
 #' [source_rest()], `"file"` builds a [source_file()], `"openmeteo"` builds a
 #' [source_openmeteo()], `"silo"` builds a [source_silo()], `"ghcnh"` builds a
 #' [source_ghcnh()], `"bom_forecast"` builds a [source_bom_forecast()],
-#' `"bom_obs"` builds a [source_bom_obs()]. Source kinds reserved for later
-#' plans (`"ecmwf"`) abort a tested, temporary `"adapter_not_yet_implemented"`
-#' stub; anything else aborts `"unknown_adapter"`.
+#' `"bom_obs"` builds a [source_bom_obs()], `"ecmwf"` builds a
+#' [source_ecmwf()]. Anything else aborts `"unknown_adapter"`.
 #'
 #' @param site A `met_site` object.
 #'

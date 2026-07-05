@@ -62,11 +62,19 @@
 #'   made here) but accepted for interface consistency with the rest of the
 #'   package's `now = .now()` seam and so callers/tests can pass a frozen
 #'   value uniformly.
+#' @param parse How to return a successful body: `"json"` (default, parsed via
+#'   `httr2::resp_body_json()`, as every Plan 04-06 adapter needs), `"lines"`
+#'   (a character vector split on newlines, for text sidecars that are not
+#'   themselves valid JSON -- e.g. Plan 08's JSON-*lines* `.index` files), or
+#'   `"raw"` (the raw response bytes, for binary bodies -- e.g. Plan 08's
+#'   `.grib2` range downloads).
 #'
-#' @return The parsed response body (a list, via `httr2::resp_body_json()`).
+#' @return The response body, shaped per `parse`.
 #' @keywords internal
 #' @noRd
-.http_get <- function(url, headers = list(), query = list(), retry = 3, now = .now()) {
+.http_get <- function(url, headers = list(), query = list(), retry = 3, now = .now(),
+                      parse = c("json", "lines", "raw")) {
+  parse <- match.arg(parse)
   if (identical(Sys.getenv("METEOTIDY_NO_NET"), "1")) {
     abort_meteo(
       c(
@@ -93,7 +101,11 @@
     status <- httr2::resp_status(resp)
 
     if (status < 300L) {
-      return(.http_parse_body(resp))
+      return(switch(parse,
+        json = .http_parse_body(resp),
+        lines = strsplit(httr2::resp_body_string(resp), "\r?\n")[[1]],
+        raw = httr2::resp_body_raw(resp)
+      ))
     }
 
     if (status %in% .http_gone_codes) {

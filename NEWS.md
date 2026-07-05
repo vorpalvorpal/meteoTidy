@@ -106,3 +106,33 @@
   helpers (`compass2angle()`/`angle2compass()`) transcribed from
   `mevers/weatherBOM`, credited to Maurits Evers. `adapters_for_site()` now
   resolves `"bom_forecast"` and `"bom_obs"` source configs.
+- Acquisition — ECMWF Open Data (`source_ecmwf()`): the medium-range ensemble
+  (stream `"enfo"`, 50 perturbed members, 0.25 deg grid by default) read from
+  GRIB2 via `terra`/GDAL's GRIB driver (new **Suggests**-only dependency,
+  guarded by an internal `.have_terra()` check on every fetch path). An
+  index-driven, byte-range download (`ecmwf_index_parse()`,
+  `ecmwf_select_messages()`, `R/ecmwf-index.R`) fetches only the requested
+  variables/members from one real ECMWF Open Data GRIB2 file per forecast
+  step (verified against the live `data.ecmwf.int` mirror) rather than whole
+  ensemble files. Ensemble member identity is demuxed from GRIB band PDS
+  metadata (`grib_field_table()`, via `terra::meta()`); values are extracted
+  at the site's nearest grid point (`grib_extract_point()`, deliberately
+  nearest-neighbour rather than bilinear, given the coarse grid) and
+  converted from whichever unit GDAL actually decoded them into (it
+  auto-converts ECMWF's Kelvin temperatures to Celsius) before being returned
+  as canonical forecast rows (`model = "ifs_<stream>"`). When `terra` is
+  unavailable, `fetch_forecast()` aborts a guided `"terra_required"` error
+  pointing at `source_openmeteo(product = "seasonal")` as a no-GRIB
+  degradation path; when the installed GDAL can't decode CCSDS/AEC-compressed
+  GRIB2 (common on CRAN binary builds lacking libaec), it aborts
+  `"grib_ccsds_unsupported"` with the same pointer. **Deviation from
+  SCOPING §5.2, recorded after live verification (2026-07-06,
+  `plans/08-acquisition-ecmwf.md`): the plan's target 46-day stream
+  (`"eefo"`) does not exist in ECMWF's real open-data catalogue** — only
+  `oper`/`enfo`/`waef`/`wave` (plus `aifs-ens`/`aifs-single`) are open, so
+  `source_ecmwf()` currently provides no long-range coverage;
+  `source_openmeteo(product = "seasonal")` remains the only long-range
+  channel. `.http_get()` (Plan 04) gained a `parse` argument
+  (`"json"`/`"lines"`/`"raw"`) to serve this adapter's JSON-*lines* `.index`
+  sidecars and raw `.grib2` bytes. `adapters_for_site()` now resolves
+  `"ecmwf"` source configs.

@@ -1,6 +1,3 @@
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"cf","stream":"eefo","step":"24","levtype":"sfc","param":"2t","number":0,"_offset":0,"_length":1200}
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"pf","stream":"eefo","step":"24","levtype":"sfc","param":"2t","number":1,"_offset":1200,"_length":1200}
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"pf","stream":"eefo","step":"24","levtype":"sfc","param":"2t","number":2,"_offset":2400,"_length":1200}
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"cf","stream":"eefo","step":"48","levtype":"sfc","param":"2t","number":0,"_offset":3600,"_length":1200}
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"cf","stream":"eefo","step":"24","levtype":"sfc","param":"10u","number":0,"_offset":4800,"_length":1200}
-{"domain":"g","date":"20260101","time":"0000","expver":"prod","class":"od","type":"cf","stream":"eefo","step":"24","levtype":"sfc","param":"10v","number":0,"_offset":6000,"_length":1200}
+{"domain": "g", "date": "20260702", "time": "0000", "expver": "0001", "class": "od", "type": "pf", "stream": "enfo", "step": "24", "levtype": "sfc", "number": "1", "param": "2t", "_offset": 0, "_length": 655849}
+{"domain": "g", "date": "20260702", "time": "0000", "expver": "0001", "class": "od", "type": "pf", "stream": "enfo", "step": "24", "levtype": "sfc", "number": "2", "param": "2t", "_offset": 655849, "_length": 656266}
+{"domain": "g", "date": "20260702", "time": "0000", "expver": "0001", "class": "od", "type": "pf", "stream": "enfo", "step": "24", "levtype": "sfc", "number": "3", "param": "2t", "_offset": 1312115, "_length": 653388}
