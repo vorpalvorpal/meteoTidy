@@ -95,12 +95,54 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
     class = c(
       "meteoTidy_error",
       "meteoTidy_warning",
-      "meteoTidy_message"
+      "meteoTidy_message",
+      # Plan 01 — enums (R/enums.R)
+      "meteoTidy_error_invalid_qc_flag",
+      "meteoTidy_error_invalid_method",
+      "meteoTidy_error_invalid_tier",
+      "meteoTidy_error_invalid_statistical_class",
+      "meteoTidy_error_invalid_measurability_class",
+      # Plan 01 — units (R/units.R)
+      "meteoTidy_error_bad_units",
+      "meteoTidy_warning_units_conflict",
+      # Plan 01 — dictionary (R/dict.R)
+      "meteoTidy_error_bad_variable_name",
+      "meteoTidy_error_bad_variable_range",
+      "meteoTidy_error_duplicate_variable",
+      "meteoTidy_error_unknown_variable",
+      # Plan 01 — shared schema utilities (R/schema.R)
+      "meteoTidy_error_schema_missing_column",
+      "meteoTidy_error_schema_bad_type",
+      # Plan 01 — observation schema (R/schema-obs.R)
+      "meteoTidy_error_non_utc_time",
+      "meteoTidy_error_range_violation",
+      "meteoTidy_error_duplicate_key",
+      # Plan 01 — forecast schema (R/schema-forecast.R)
+      "meteoTidy_error_member_stat_conflict",
+      "meteoTidy_error_lead_inconsistent"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
       "Umbrella class attached to every warning raised via warn_meteo().",
-      "Umbrella class attached to every message raised via inform_meteo()."
+      "Umbrella class attached to every message raised via inform_meteo().",
+      "A qc_flag value outside QC_FLAG_LEVELS.",
+      "A method value outside METHOD_LEVELS.",
+      "A tier value outside TIER_LEVELS.",
+      "A statistical_class value outside STAT_CLASS_LEVELS.",
+      "A measurability_class value outside MEASURABILITY_LEVELS.",
+      "A unit that cannot be converted to the target canonical unit.",
+      "A units-carrying input whose unit disagrees with the `from` argument (the carried unit is trusted).", # nolint: line_length_linter.
+      "met_register_variable() called with a non-scalar-string variable name.",
+      "met_register_variable() called with min > max.",
+      "met_register_variable() attempted to silently redefine an existing variable without overwrite = TRUE.", # nolint: line_length_linter.
+      "met_variable() lookup for a variable not in the dictionary.",
+      "A new_*() constructor input is missing a required column.",
+      "A new_*() constructor input has a column of the wrong type.",
+      "A datetime column is not tagged with tzone = \"UTC\".",
+      "An ok-flagged observation value outside its variable's [min, max] range.",
+      "A canonical table has duplicate key rows.",
+      "A forecast row has both member and stat set (violates the member/stat rule).",
+      "A forecast row's lead_time does not equal valid_time - issue_time."
     ),
     stringsAsFactors = FALSE
   )

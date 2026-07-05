@@ -24,6 +24,9 @@ Imports:
     cli,
     glue,
     rlang,
+    tibble,
+    units,
+    vctrs,
     withr
 Suggests:
     httptest2,
