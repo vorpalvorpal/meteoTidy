@@ -241,3 +241,43 @@
   same forecast/record distinction Plan 10 draws for gap-fill. The monthly
   `correct_refit()` job is scaffolded as a documented skeleton awaiting
   Plan 12's fitting functions and Plan 13's skill verdict.
+- Correction -- the fitted tiers (internal): `mean_bias` fits day-of-year and
+  hour-of-day bias as a harmonic (sin/cos) regression rather than raw
+  hour-of-day bins, so a bias that flips sign summer/winter is recovered and
+  removed across the whole year; when the training overlap covers less than
+  a full annual cycle, the annual-harmonic amplitudes are damped toward zero
+  in proportion to seasonal coverage, so a partial-year fit contributes only
+  a mild tilt in the untrained opposite season instead of extrapolating a
+  larger, wrong-signed correction there (hour-of-day harmonics are never
+  shrunk). `qmap` (hand-rolled empirical quantile mapping) always fits an
+  unconditional pooled map alongside any per-group (e.g. per-season) maps,
+  so a group with too little or no training data still gets corrected via
+  the pooled base rather than left unmapped; beyond the training quantile
+  support it extrapolates by the constant shift implied at the nearest
+  trained quantile, never an unbounded or clamped-output correction. `emos`
+  fits a `crch`-based (falling back to a plain location/scale regression on
+  a degenerate fixture) predictive mean+spread per lead bucket, and refuses
+  to fit on Historical-Forecast `lead_time = NA` proxy rows
+  (`"lead_unresolved"`), so those rows can never contaminate lead-aware
+  training. `R/correct.R`'s Plan 11 shrinkage placeholder is now the real
+  `shrink_to_climatology(corrected, climatology, weight)` blend primitive
+  (`R/shrinkage.R`, plus a target-aware `apply_correction_shrinkage()`
+  wrapper); `correct_apply(target = "forecast")` calls it with a
+  placeholder `weight = 1` ("trust the correction fully") until Plan 13
+  supplies a real verified-skill-derived weight per lead bucket -- a
+  documented, known gap. Wind direction is corrected as a joint u/v vector
+  rotation (`dir_to_uv()`/`uv_to_dir()`/`correct_wind_direction()`), never
+  quantile-mapped as a raw angle, so a bias straddling north is corrected
+  without a spurious ~180-degree artefact. A new post-correction
+  consistency pass (`consistency_pass()`) reuses Plan 09's shared
+  `physics_constraints()` module in its `"enforce"` mode to clip any
+  remaining cross-variable violation (gusts, dewpoint, RH, radiation
+  ceiling) and counts how many relations needed clipping. The model-only
+  experiments (`profile_rescale()`, `diagnostic_blh()`,
+  `radiation_resplit()`, `model_only_correct()`) are all opt-in and
+  default off: `profile_rescale()` rescales upper-level winds by the
+  corrected/raw 10 m wind ratio, damped with height and capped, and
+  suppressed entirely under stable stratification; `diagnostic_blh()`
+  serves a simple recomputed boundary-layer height alongside (never
+  instead of) the raw model BLH; `radiation_resplit()` passes raw
+  direct/diffuse through unchanged (tier `"raw"`) without a pyranometer.

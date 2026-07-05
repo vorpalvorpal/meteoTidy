@@ -4,27 +4,28 @@
 # a watermark for its main branching logic -- the tier a variable is
 # corrected at depends on what has been fitted and manifest-recorded for
 # that (site, variable, source), not on how much time has passed.
+#
+# The real `shrink_to_climatology()` (a 3-arg `(corrected, climatology,
+# weight)` blend primitive) now lives in `R/shrinkage.R`, replacing this
+# file's former placeholder identity pass-through. `correct_apply()` still
+# calls it directly (by name) from its own `target == "forecast"` branch
+# below -- see `.correct_forecast_climatology()` and the call site inside
+# `correct_apply()` -- rather than routing through
+# `apply_correction_shrinkage()`, so `test-correct-apply.R`'s
+# `local_mocked_bindings(shrink_to_climatology = ...)` mock (which replaces
+# the whole function for that test and only asserts call counts on the
+# record/forecast branches) keeps working unchanged.
 
-#' Shrinkage-to-climatology hook (Plan 12 placeholder)
-#'
-#' **Placeholder.** Plan 12 implements lead-dependent shrinkage of a
-#' corrected forecast towards climatology (skill decays with lead time, so a
-#' correction fit at short lead should not be trusted unshrunk at long
-#' lead). For now this is an identity pass-through so the
-#' `correct_apply(target = "forecast")` routing can be proven by test before
-#' Plan 12 supplies the real implementation. `correct_apply()` calls this
-#' function by name (not inline) specifically so `test-correct-apply.R` can
-#' mock it via `testthat::local_mocked_bindings()` and assert it is called
-#' only on the forecast branch.
-#'
-#' @param corrected A corrected canonical obs/forecast tibble.
-#' @param ... Reserved for Plan 12's shrinkage parameters (lead bucket,
-#'   shrink weight from the skill verdict, etc).
-#' @return `corrected`, unchanged (identity pass-through).
-#' @keywords internal
-#' @noRd
-shrink_to_climatology <- function(corrected, ...) {
-  corrected
+# Placeholder climatology lookup for the forecast-shrinkage path. Plan 13
+# does not yet exist (the real per-lead-bucket verified-skill weight is its
+# scope), so there is no climatology series or skill-derived weight to read
+# yet either. Until Plan 13 wires those in, this returns `obs$value`
+# unchanged as "climatology" and a weight of `1` ("trust the correction
+# fully") -- i.e. shrink_to_climatology() is a no-op in practice today. This
+# is a known, documented gap: Plan 13 replaces both the climatology lookup
+# and the weight with real verified-skill-derived values.
+.correct_forecast_climatology <- function(corrected, leads) {
+  shrink_to_climatology(corrected$value, climatology = corrected$value, weight = 1)
 }
 
 # Read a site's current observations for (source, variable) from the store.
@@ -164,7 +165,14 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
   corrected <- vctrs::vec_rbind(!!!results)
 
   if (target == "forecast") {
-    corrected <- shrink_to_climatology(corrected, leads = leads)
+    # Plan 12's real shrink_to_climatology(corrected, climatology, weight)
+    # blend primitive (R/shrinkage.R). No climatology series or verified
+    # skill weight exists yet (Plan 13's scope) -- see
+    # .correct_forecast_climatology()'s documented gap above -- so this
+    # calls shrink_to_climatology() with a placeholder weight = 1 ("trust
+    # the correction fully") until Plan 13 supplies the real weight per
+    # lead bucket.
+    corrected$value <- .correct_forecast_climatology(corrected, leads = leads)
   }
 
   corrected

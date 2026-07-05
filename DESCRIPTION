@@ -23,6 +23,7 @@ Config/testthat/edition: 3
 Imports:
     arrow,
     cli,
+    crch,
     dplyr,
     glue,
     httr2,
@@ -45,6 +46,7 @@ Suggests:
     duckdb,
     httptest2,
     lintr,
+    scoringRules,
     terra,
     testthat (>= 3.0.0)
 Collate:
@@ -55,6 +57,7 @@ Collate:
     'bom-parse.R'
     'bom-transport.R'
     'conditions.R'
+    'consistency-pass.R'
     'correct-physical.R'
     'correct.R'
     'dict-builtin.R'
@@ -69,6 +72,7 @@ Collate:
     'history-products.R'
     'http.R'
     'meteoTidy-package.R'
+    'model-only.R'
     'openmeteo-endpoints.R'
     'openmeteo-parse.R'
     'physics-constraints.R'
@@ -80,6 +84,7 @@ Collate:
     'schema-forecast.R'
     'schema-obs.R'
     'schema.R'
+    'shrinkage.R'
     'silo-disagg.R'
     'silo-qcode.R'
     'site-list.R'
@@ -100,8 +105,12 @@ Collate:
     'store-obs.R'
     'store-watermark.R'
     'store.R'
+    'tier-emos.R'
+    'tier-mean-bias.R'
+    'tier-qmap.R'
     'tier-select.R'
     'transfer.R'
     'units.R'
     'utils.R'
     'vendor-weatherbom.R'
+    'wind-uv.R'

@@ -171,7 +171,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 10 -- fill treatments (R/fill-treatments.R)
       "meteoTidy_error_fill_missing_site",
       # Plan 11 -- correction lifecycle (R/correct.R)
-      "meteoTidy_error_tier_mismatch"
+      "meteoTidy_error_tier_mismatch",
+      # Plan 12 -- EMOS correction tier (R/tier-emos.R)
+      "meteoTidy_error_lead_unresolved"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -229,7 +231,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3).", # nolint: line_length_linter.
       "fit_transfer() was called with source/target series that share no overlapping timestamp to fit against.", # nolint: line_length_linter.
       "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied.", # nolint: line_length_linter.
-      "correct_apply() found the selected tier disagreed with the current calibration manifest's recorded tier." # nolint: line_length_linter.
+      "correct_apply() found the selected tier disagreed with the current calibration manifest's recorded tier.", # nolint: line_length_linter.
+      "fit_emos() was asked to fit lead-aware calibration on rows whose lead_time is NA (a Historical-Forecast proxy row)." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )
