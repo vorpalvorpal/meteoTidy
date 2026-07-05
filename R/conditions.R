@@ -119,7 +119,19 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_duplicate_key",
       # Plan 01 — forecast schema (R/schema-forecast.R)
       "meteoTidy_error_member_stat_conflict",
-      "meteoTidy_error_lead_inconsistent"
+      "meteoTidy_error_lead_inconsistent",
+      # Plan 02 — site registry (R/site.R)
+      "meteoTidy_error_bad_site_id",
+      "meteoTidy_error_bad_coordinates",
+      "meteoTidy_error_bad_timezone",
+      "meteoTidy_error_bad_store_root",
+      "meteoTidy_error_missing_roughness",
+      # Plan 02 — site list (R/site-list.R)
+      "meteoTidy_error_bad_site_list",
+      "meteoTidy_error_duplicate_site_id",
+      # Plan 02 — site YAML (R/site-yaml.R)
+      "meteoTidy_error_inline_secret",
+      "meteoTidy_error_unknown_config_key"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -142,7 +154,16 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "An ok-flagged observation value outside its variable's [min, max] range.",
       "A canonical table has duplicate key rows.",
       "A forecast row has both member and stat set (violates the member/stat rule).",
-      "A forecast row's lead_time does not equal valid_time - issue_time."
+      "A forecast row's lead_time does not equal valid_time - issue_time.",
+      "A met_site site_id is empty or contains characters outside [A-Za-z0-9_-].",
+      "A met_site latitude/longitude/elevation is out of range or non-finite.",
+      "A met_site timezone is not in OlsonNames().",
+      "A met_site store_root is empty.",
+      "A wind instrument on a met_site has no roughness_length (z0).",
+      "A met_sites element is not a met_site object.",
+      "A met_sites collection has duplicate site_id values.",
+      "A site YAML sources entry has a literal secret value instead of a *_env/*_keyring reference.", # nolint: line_length_linter.
+      "A site YAML file has an unrecognised top-level or site-level key."
     ),
     stringsAsFactors = FALSE
   )

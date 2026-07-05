@@ -24,10 +24,12 @@ Imports:
     cli,
     glue,
     rlang,
+    S7,
     tibble,
     units,
     vctrs,
-    withr
+    withr,
+    yaml
 Suggests:
     httptest2,
     lintr,
