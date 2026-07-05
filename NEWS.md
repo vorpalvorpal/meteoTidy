@@ -81,3 +81,28 @@
   environment variable at fetch/resolve time only, never storing or emitting
   it. `adapters_for_site()` now resolves `"silo"` and `"ghcnh"` source
   configs.
+- Acquisition — BOM (`source_bom_forecast()`, `source_bom_obs()`): daily
+  précis (7-day) forecasts and rolling 72-hour station observations from the
+  Bureau of Meteorology's official anonymous-FTP/HTTP-mirror product feeds,
+  with an opt-in (`allow_web_api = FALSE` by default), at-your-own-risk
+  unofficial web-API fallback for a BOM geohash search and observation
+  serving. Both adapters route through a shared, configurable transport
+  ladder (`ladder_fetch()`) that tries rungs in order, stamps a `transport`
+  provenance column recording which rung actually served each row, and
+  integrates a circuit breaker (`breaker_read()`/`breaker_write()`,
+  persisted per store as `bom-breaker.json`) that trips a rung after three
+  consecutive persistent failures (skipping it on later calls) while never
+  penalising merely-transient failures; breaker state survives a
+  read/write/re-read cycle across simulated process runs. The précis
+  product carries no model name (`model = NA`, per the canonical forecast
+  schema); its non-numeric elements (short/extended forecast text,
+  fire-danger and UV-alert categories) are archived verbatim via a new
+  `fetch_forecast_aux()` adapter generic, a deliberate, documented extension
+  of the Plan 04 adapter contract for sources with a non-numeric forecast
+  companion table. `resolve_station()` caches a resolved BOM geohash on the
+  site (`site_resolved(site, c("bom", "geohash"))`); with the web API
+  disabled and no cached geohash it aborts with actionable guidance rather
+  than failing silently. Includes a vendored (MIT), trimmed pair of compass
+  helpers (`compass2angle()`/`angle2compass()`) transcribed from
+  `mevers/weatherBOM`, credited to Maurits Evers. `adapters_for_site()` now
+  resolves `"bom_forecast"` and `"bom_obs"` source configs.

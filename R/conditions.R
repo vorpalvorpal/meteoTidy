@@ -155,7 +155,12 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 06 — SILO/GHCNh adapters (R/silo-qcode.R, R/source-silo.R,
       # R/source-ghcnh.R, R/station-resolve.R)
       "meteoTidy_error_unknown_silo_code",
-      "meteoTidy_error_unresolved_station"
+      "meteoTidy_error_unresolved_station",
+      # Plan 07 — BOM adapters (R/bom-transport.R, R/source-bom-forecast.R,
+      # R/source-bom-obs.R)
+      "meteoTidy_error_bom_all_transports_failed",
+      "meteoTidy_error_bom_geohash_unavailable",
+      "meteoTidy_error_no_forecast_aux_support"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -204,7 +209,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "An Open-Meteo response was missing an expected hourly/daily block.",
       "Emitted once per fetch when an Open-Meteo request uses the free (non-commercial) tier.", # nolint: line_length_linter.
       "silo_qcode_map() received a SILO source/quality code outside the documented reference table.", # nolint: line_length_linter.
-      "fetch() was called on a station-resolving adapter (silo/ghcnh) before resolve_station() populated the site's resolved-ID cache." # nolint: line_length_linter.
+      "fetch() was called on a station-resolving adapter (silo/ghcnh) before resolve_station() populated the site's resolved-ID cache.", # nolint: line_length_linter.
+      "ladder_fetch() exhausted every eligible BOM transport rung for the requested product.",
+      "resolve_station() needs a BOM geohash but none is cached and allow_web_api = FALSE.",
+      "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )

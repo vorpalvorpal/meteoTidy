@@ -36,8 +36,10 @@ Imports:
     weatherOz (>= 2.0.2),
     withr,
     worldmet (>= 1.0.0),
+    xml2,
     yaml
 Suggests:
+    curl,
     DBI,
     duckdb,
     httptest2,

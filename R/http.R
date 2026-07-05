@@ -146,3 +146,54 @@
   }
   httr2::resp_body_json(resp)
 }
+
+# Plan 07 — the FTP/FTP-mirror seam.
+#
+# `.ftp_get()` mirrors `.http_get()`'s role but for BOM's anonymous-FTP /
+# HTTP-mirror product feeds (SCOPING §5.1 ladder rung 1): it is the ONLY
+# function in the package that fetches from `ftp.bom.gov.au`/
+# `reg.bom.gov.au`. Every frozen test mocks this function directly (binding
+# a fixture-returning fake in its place via testthat's edition-3 mocking
+# API), so the real body below is not exercised by tests; it is a
+# best-effort implementation for live use, built on `curl` (a transitive
+# dependency via httr2, guarded here with `rlang::check_installed()` since
+# it is not a hard `Imports` entry).
+
+#' Fetch a URL through the package's FTP/FTP-mirror seam
+#'
+#' The only function in `meteoTidy` that performs a live FTP (or
+#' FTP-mirrored-over-HTTP) request, mirroring `.http_get()`'s role for
+#' BOM's anonymous-FTP product feeds and `reg.bom.gov.au` HTTP mirrors
+#' (SCOPING §5.1 ladder rung 1). Every adapter that reads from this rung
+#' calls this seam so tests have one place to mock
+#' (`testthat::local_mocked_bindings(.ftp_get = ...)`).
+#'
+#' @param url Single string, the request URL (`ftp://` or `https://`).
+#' @param ... Reserved for future options (timeouts, credentials); unused.
+#'
+#' @return The raw response body as a single string.
+#' @keywords internal
+#' @noRd
+.ftp_get <- function(url, ...) {
+  if (identical(Sys.getenv("METEOTIDY_NO_NET"), "1")) {
+    abort_meteo(
+      c(
+        "Network access is disabled ({.envvar METEOTIDY_NO_NET} = {.val 1}).",
+        "i" = "This guard exists so tests never make a live HTTP/FTP request."
+      ),
+      class = "network_disabled"
+    )
+  }
+
+  rlang::check_installed("curl", reason = "to fetch BOM FTP/mirror product feeds.")
+
+  resp <- curl::curl_fetch_memory(url)
+  if (resp$status_code >= 400L) {
+    class <- if (resp$status_code %in% .http_gone_codes) "http_gone" else "http_client_error"
+    abort_meteo(
+      "Request to {.url {url}} failed (status {resp$status_code}).",
+      class = class
+    )
+  }
+  rawToChar(resp$content)
+}

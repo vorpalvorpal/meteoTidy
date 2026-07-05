@@ -107,6 +107,40 @@ S7::method(fetch_forecast, met_adapter) <- function(
   )
 }
 
+#' Fetch canonical forecast_aux rows from an adapter
+#'
+#' A deliberate, documented extension of the Plan 04 adapter contract, added
+#' in Plan 07: the first adapter with a non-numeric forecast companion table
+#' as a first-class fetch path is BOM's précis product (short/extended text,
+#' fire-danger and UV categories). Like [fetch_forecast()], the default
+#' method aborts (class `"no_forecast_aux_support"`); only adapters that
+#' implement it (currently `source_bom_forecast()`) override it.
+#'
+#' @param adapter A [met_adapter()] subclass instance.
+#' @param site A `met_site` object.
+#' @param window A list with `from`/`to`, both UTC `POSIXct` scalars.
+#' @param now Injectable clock; defaults to `.now()`.
+#'
+#' @return A canonical forecast_aux tibble.
+#' @family adapter
+#' @export
+fetch_forecast_aux <- S7::new_generic(
+  "fetch_forecast_aux", "adapter",
+  function(adapter, site, window, now = .now()) {
+    S7::S7_dispatch()
+  }
+)
+
+S7::method(fetch_forecast_aux, met_adapter) <- function(adapter, site, window, now = .now()) {
+  abort_meteo(
+    c(
+      "{.arg adapter} ({.cls {class(adapter)[1]}}) does not support forecast_aux retrieval.",
+      "i" = "Only adapters with a non-numeric forecast companion table (e.g. BOM precis) implement {.fn fetch_forecast_aux}." # nolint: line_length_linter.
+    ),
+    class = "no_forecast_aux_support"
+  )
+}
+
 #' Resolve a site's external station/grid identifier for an adapter
 #'
 #' Some adapters (BOM, GHCNh, SILO — Plans 06-07) need to resolve a site's
@@ -181,11 +215,12 @@ check_fetch_result <- function(x, adapter, variables) {
 }
 
 # Adapter names that are recognised (so they get a specific, tested stub
-# error) but not yet implemented -- Plans 07-08 replace this stub with a real
-# constructor for each. "silo"/"ghcnh" moved out of this list in Plan 06,
-# which wires them to real constructors below.
+# error) but not yet implemented -- Plan 08 replaces this stub with a real
+# constructor. "silo"/"ghcnh" moved out of this list in Plan 06,
+# "bom_forecast"/"bom_obs" in Plan 07, which wire them to real constructors
+# below.
 .adapter_not_yet_implemented_names <- function() {
-  c("bom_forecast", "bom_obs", "ecmwf")
+  c("ecmwf")
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
@@ -242,6 +277,22 @@ check_fetch_result <- function(x, adapter, variables) {
     return(source_ghcnh(source_id = source_name))
   }
 
+  if (kind == "bom_forecast") {
+    return(source_bom_forecast(
+      allow_web_api = config$allow_web_api %||% FALSE,
+      store_root = config$store_root,
+      source_id = source_name
+    ))
+  }
+
+  if (kind == "bom_obs") {
+    return(source_bom_obs(
+      allow_web_api = config$allow_web_api %||% FALSE,
+      store_root = config$store_root,
+      source_id = source_name
+    ))
+  }
+
   if (kind %in% .adapter_not_yet_implemented_names()) {
     abort_meteo(
       c(
@@ -255,7 +306,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )
@@ -268,10 +319,10 @@ check_fetch_result <- function(x, adapter, variables) {
 #' dispatching on each source's `adapter` field: `"rest"` builds a
 #' [source_rest()], `"file"` builds a [source_file()], `"openmeteo"` builds a
 #' [source_openmeteo()], `"silo"` builds a [source_silo()], `"ghcnh"` builds a
-#' [source_ghcnh()]. Source kinds reserved for later plans (`"bom_forecast"`,
-#' `"bom_obs"`, `"ecmwf"`) abort a tested, temporary
-#' `"adapter_not_yet_implemented"` stub; anything else aborts
-#' `"unknown_adapter"`.
+#' [source_ghcnh()], `"bom_forecast"` builds a [source_bom_forecast()],
+#' `"bom_obs"` builds a [source_bom_obs()]. Source kinds reserved for later
+#' plans (`"ecmwf"`) abort a tested, temporary `"adapter_not_yet_implemented"`
+#' stub; anything else aborts `"unknown_adapter"`.
 #'
 #' @param site A `met_site` object.
 #'

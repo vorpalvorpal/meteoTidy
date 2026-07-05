@@ -18,20 +18,23 @@ from YAML by Plan 02) and constructs one \code{\link[=met_adapter]{met_adapter()
 dispatching on each source's \code{adapter} field: \code{"rest"} builds a
 \code{\link[=source_rest]{source_rest()}}, \code{"file"} builds a \code{\link[=source_file]{source_file()}}, \code{"openmeteo"} builds a
 \code{\link[=source_openmeteo]{source_openmeteo()}}, \code{"silo"} builds a \code{\link[=source_silo]{source_silo()}}, \code{"ghcnh"} builds a
-\code{\link[=source_ghcnh]{source_ghcnh()}}. Source kinds reserved for later plans (\code{"bom_forecast"},
-\code{"bom_obs"}, \code{"ecmwf"}) abort a tested, temporary
-\code{"adapter_not_yet_implemented"} stub; anything else aborts
-\code{"unknown_adapter"}.
+\code{\link[=source_ghcnh]{source_ghcnh()}}, \code{"bom_forecast"} builds a \code{\link[=source_bom_forecast]{source_bom_forecast()}},
+\code{"bom_obs"} builds a \code{\link[=source_bom_obs]{source_bom_obs()}}. Source kinds reserved for later
+plans (\code{"ecmwf"}) abort a tested, temporary \code{"adapter_not_yet_implemented"}
+stub; anything else aborts \code{"unknown_adapter"}.
 }
 \seealso{
 Other adapter: 
 \code{\link{apply_mapping}()},
 \code{\link{fetch}()},
 \code{\link{fetch_forecast}()},
+\code{\link{fetch_forecast_aux}()},
 \code{\link{met_adapter}()},
 \code{\link{met_attribution}()},
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
+\code{\link{source_bom_forecast}()},
+\code{\link{source_bom_obs}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},
 \code{\link{source_openmeteo}()},
