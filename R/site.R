@@ -114,11 +114,16 @@ met_site <- S7::new_class(
 
 # The default (empty) shape of the `resolved` cache: bom/ghcnh/silo sub-lists
 # with every field defaulting to NA. See plans/02-site-registry.md.
+#
+# `silo` carries both `station` (PatchedPoint resolves the nearest BOM
+# station number) and `grid` (DataDrill resolves a grid cell instead) —
+# added when Plan 06 (source_silo()) confirmed both keys are load-bearing,
+# not just `grid` as originally scoped here.
 .empty_resolved <- function() {
   list(
     bom = list(geohash = NA_character_, aac = NA_character_, product = NA_character_),
     ghcnh = list(station_id = NA_character_, distance_km = NA_real_),
-    silo = list(grid = NA_character_)
+    silo = list(station = NA_character_, grid = NA_character_)
   )
 }
 
