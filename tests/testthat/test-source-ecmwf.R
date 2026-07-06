@@ -82,6 +82,38 @@ describe("graceful degradation when terra is absent", {
   })
 })
 
+describe(".ecmwf_resolve_issue_times()", {
+  it("rounds down to the real 00/06/12/18Z issue schedule", {
+    expect_equal(
+      meteoTidy:::.ecmwf_round_down_to_cycle(as.POSIXct("2026-07-06 05:30", tz = "UTC")),
+      as.POSIXct("2026-07-06 00:00:00", tz = "UTC")
+    )
+    expect_equal(
+      meteoTidy:::.ecmwf_round_down_to_cycle(as.POSIXct("2026-07-06 23:59", tz = "UTC")),
+      as.POSIXct("2026-07-06 18:00:00", tz = "UTC")
+    )
+  })
+
+  it("returns every eligible cycle spanning issue_window, capped at now", {
+    win <- list(from = as.POSIXct("2026-07-06 01:00", tz = "UTC"),
+               to = as.POSIXct("2026-07-06 20:00", tz = "UTC"))
+    all_cycles <- meteoTidy:::.ecmwf_resolve_issue_times(
+      win, now = as.POSIXct("2026-07-06 20:00", tz = "UTC")
+    )
+    expect_equal(all_cycles, as.POSIXct(
+      c("2026-07-06 00:00:00", "2026-07-06 06:00:00",
+        "2026-07-06 12:00:00", "2026-07-06 18:00:00"), tz = "UTC"
+    ))
+
+    capped <- meteoTidy:::.ecmwf_resolve_issue_times(
+      win, now = as.POSIXct("2026-07-06 07:00", tz = "UTC")
+    )
+    expect_equal(capped, as.POSIXct(
+      c("2026-07-06 00:00:00", "2026-07-06 06:00:00"), tz = "UTC"
+    ))
+  })
+})
+
 describe("met_attribution()", {
   it("returns the required CC-BY credit for ECMWF Open Data", {
     att <- met_attribution(source_ecmwf())

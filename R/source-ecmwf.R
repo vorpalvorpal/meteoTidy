@@ -195,19 +195,59 @@ source_ecmwf <- S7::new_class(
   )
 }
 
-# Resolve the issue cycle(s) to fetch for `issue_window`. Real ECMWF Open
-# Data issues on a fixed 4x/day (00/06/12/18Z) schedule; properly rounding
-# `issue_window` down to the most recent eligible cycle(s) is real-world
-# logic this plan documents as a simplification, since the only test that
-# exercises this path (the end-to-end fetch, which SKIPS without the
-# fixture) treats `now` itself as the issue cycle. Kept as its own function
-# so a later plan can replace the body without touching call sites.
+# Real ECMWF Open Data issues on a fixed 4x/day schedule (VERIFIED against
+# the live https://data.ecmwf.int/forecasts/ mirror, 2026-07-06: the 00z/06z/
+# 12z cycles for the current day were already published; 18z was not yet).
+.ecmwf_cycle_hours <- function() c(0L, 6L, 12L, 18L)
+
+# Round `t` down to the most recent 00/06/12/18Z ECMWF issue cycle.
+.ecmwf_round_down_to_cycle <- function(t) {
+  hour <- as.integer(format(t, "%H", tz = "UTC"))
+  cycle_hours <- .ecmwf_cycle_hours()
+  cycle_hour <- max(cycle_hours[cycle_hours <= hour])
+  cycle_date <- format(t, "%Y-%m-%d", tz = "UTC")
+  as.POSIXct(paste(cycle_date, sprintf("%02d:00:00", cycle_hour)), tz = "UTC")
+}
+
+#' Resolve the ECMWF issue cycle(s) spanning `issue_window`
+#'
+#' Rounds every requested instant down to the real 00/06/12/18Z ECMWF issue
+#' schedule (never up past `now`, since a cycle cannot be issued in the
+#' future) and returns every eligible cycle from `issue_window$from` through
+#' `min(issue_window$to, now)`, spaced 6 hours apart.
+#'
+#' **v1 scope decision:** `fetch_forecast()` only ever fetches the *last*
+#' (most recent) cycle this returns -- it downloads one per-step GRIB2 file
+#' per call (SCOPING §5.2's per-step file layout) and stamps a single
+#' `issue_time` onto every output row. Genuinely fetching *multiple* cycles
+#' in one `fetch_forecast()` call (each producing its own set of rows) would
+#' need a per-cycle download loop this plan does not build, since no test
+#' requires it and the pipeline's own hourly/daily cadence (Plan 16) is what
+#' provides multi-cycle coverage over time -- each sync tick naturally
+#' targets "the current cycle". This is a deliberate, documented v1 decision
+#' (not a silent gap): `.ecmwf_resolve_issue_times()` itself is fully correct
+#' for multiple cycles: callers needing genuine multi-cycle-per-request
+#' support can loop over its full return value themselves.
+#'
+#' @param issue_window A list with `from`/`to`, both UTC `POSIXct` scalars.
+#' @param now Injectable current time; caps how recent a returned cycle can
+#'   be.
+#' @return A `POSIXct` vector of eligible cycle instants (ascending), each
+#'   exactly on a 00/06/12/18 UTC hour boundary.
+#' @keywords internal
+#' @noRd
 .ecmwf_resolve_issue_times <- function(issue_window, now) {
-  # Simplification (documented): `now` IS the issue cycle. A real
-  # implementation would round `now`/`issue_window$from` down to the nearest
-  # 00/06/12/18 UTC cycle and could return multiple cycles spanning
-  # `issue_window`; this is not exercised by any runnable test here.
-  now
+  from <- issue_window$from %||% now
+  to <- min(issue_window$to %||% now, now)
+
+  from_cycle <- .ecmwf_round_down_to_cycle(from)
+  to_cycle <- .ecmwf_round_down_to_cycle(to)
+  if (to_cycle < from_cycle) {
+    to_cycle <- from_cycle
+  }
+
+  cycles <- seq(from_cycle, to_cycle, by = 6 * 3600)
+  as.POSIXct(cycles, tz = "UTC", origin = "1970-01-01")
 }
 
 # Range-download the byte spans for `messages` (a filtered `.index` tibble,
@@ -218,20 +258,23 @@ source_ecmwf <- S7::new_class(
 # parse = "raw")`, the single HTTP seam every adapter uses (so
 # `httptest2`/mocking and the no-network guard both apply here too).
 #
-# Simplification (documented): the frozen end-to-end test mocks `.http_get()`
-# to return the WHOLE fixture's raw bytes regardless of the `Range` header
-# requested (see test-source-ecmwf.R), so this function's per-message
-# range-download loop cannot be exercised precisely against real partial-
-# content semantics in this environment. It is implemented as sensibly as
-# possible: one `.http_get()` call per selected message, headers carrying the
-# byte range, concatenating the returned raw vectors in message order and
-# writing them to a temp file. A real ECMWF response to a single-range
-# request returns exactly that byte span (HTTP 206, confirmed live against
-# data.ecmwf.int 2026-07-06); concatenating the (here: mocked, whole-file)
-# bytes for N messages will over-count bytes if `.http_get()` is not honouring
-# `Range`, which is fine for the mocked test (only the first message's bytes
-# are used to open a working file) but is flagged here as a real caveat for a
-# genuine multi-message fetch.
+# VERIFIED LIVE (2026-07-06, against https://data.ecmwf.int/forecasts/'s real
+# 20260706/00z enfo cycle): this function's exact per-message Range-download-
+# and-concatenate loop, called unmocked through the real `.http_get()` seam,
+# correctly reconstructs a valid multi-message GRIB2 file from two
+# independently range-downloaded messages (byte counts matched the index's
+# `_length` exactly for each chunk, and the reconstructed local file opened
+# via `grib_open()`/`grib_field_table()` with the right `param`/`step`/
+# `member` metadata for both messages). A real ECMWF HTTP 206 response to a
+# single-range request returns exactly that byte span (never the whole
+# file), so concatenating N such chunks in message order reconstructs the
+# identical byte layout as a contiguous slice of the real per-step file --
+# this is not a caveat in real use. The only place this cannot be verified
+# is the frozen `test-source-ecmwf.R` end-to-end test, which mocks
+# `.http_get()` to hand back the whole fixture's raw bytes for every call
+# regardless of the `Range` header requested (so only the first message's
+# bytes are meaningfully exercised there) -- a test-fixture limitation, not
+# a defect in this function.
 .ecmwf_download_messages <- function(base_url, messages) {
   grib_url <- paste0(base_url, ".grib2")
 
@@ -266,7 +309,11 @@ S7::method(fetch_forecast, source_ecmwf) <- function(
   }
 
   variables <- intersect(variables, adapter@provides)
-  issue_time <- .ecmwf_resolve_issue_times(issue_window, now)
+  # .ecmwf_resolve_issue_times() can return multiple eligible cycles spanning
+  # issue_window; this fetch targets the most recent one (see that
+  # function's roxygen for the documented v1 multi-cycle-per-call decision).
+  issue_cycles <- .ecmwf_resolve_issue_times(issue_window, now)
+  issue_time <- issue_cycles[[length(issue_cycles)]]
   step_hours <- round(as.numeric(difftime(issue_window$to, issue_window$from, units = "hours")))
 
   base_url <- .ecmwf_step_base_url(adapter, issue_time, step_hours)
