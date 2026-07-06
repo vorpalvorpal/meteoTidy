@@ -1,0 +1,183 @@
+---
+title: "Scheduling the pipeline verbs"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Scheduling the pipeline verbs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+`meteoTidy` does not schedule anything itself (SCOPING §9): the four pipeline
+verbs -- `met_sync_live()`, `met_sync_daily()`, `met_refit()`, and
+`met_backfill()` -- are ordinary R functions that you call on whatever
+schedule suits your deployment. This vignette shows the recommended cadence
+for each verb and a few common ways to schedule them: `cron`, GitHub Actions,
+and `taskscheduleR` (Windows).
+
+Every example below assumes you already have a site registry (a `met_site` or
+`met_sites`, typically loaded via `read_sites_yaml()`) and a pipeline
+configuration list naming your configured sources, e.g.:
+
+```{r}
+library(meteoTidy)
+
+sites <- read_sites_yaml("sites.yml")
+
+config <- list(
+  store_root = "/var/meteoTidy/store",
+  forecast_sources = c("openmeteo", "bom_forecast", "seasonal"),
+  obs_sources = c("site_aws", "bom_obs", "silo", "ghcnh"),
+  refetch_windows = list(silo = as.difftime(30, units = "days")),
+  adapter_defaults = list(bom = list(allow_web_api = FALSE))
+)
+```
+
+## The four verbs and their cadence
+
+| Verb              | Cadence          | Purpose                                                     |
+| ----------------- | ---------------- | ------------------------------------------------------------ |
+| `met_sync_live()`  | Hourly, optional | Best-effort near-real-time obs + forecast head              |
+| `met_sync_daily()` | Daily            | Full forecast refresh + curated history products            |
+| `met_refit()`      | Monthly          | Recalibration (skill-gated) + partition compaction           |
+| `met_backfill()`   | Ad hoc           | Day-0 bootstrap: full history, AWS export ingestion, initial fits, donor-coverage audit |
+
+All four are multi-site (accept a single `met_site` or a `met_sites`
+collection), incremental (they track their own watermarks), and idempotent
+(re-running with the same inputs and clock never duplicates rows or
+double-advances a watermark) -- safe to schedule directly without any
+external "has this already run" bookkeeping.
+
+```{r}
+met_sync_live(sites, config = config)
+met_sync_daily(sites, config = config)
+met_refit(sites, config = config)
+```
+
+## The BOM hourly-vs-daily backfill trade-off (SCOPING §9)
+
+**Every sync archives whatever forecast issuances are current when it runs**
+(`archive_forecasts()`, deduplicated on `(source, model, issue_time)`), and
+Open-Meteo's forecast gaps self-heal later via its Previous/Single-Runs
+endpoints -- but **BOM issues forecasts several times a day, and a missed
+issuance cannot be backfilled** (there is no historical-issuance API for
+BOM's products). This means:
+
+- **Hourly `met_sync_live()` users** capture most of BOM's intra-day issue
+  cycles, because the live sync polls (and archives) roughly as often as BOM
+  re-issues.
+- **Daily-only users** (running only `met_sync_daily()`) get one forecast
+  snapshot per day and **permanently miss** any BOM issuance that occurred
+  and was superseded between two daily runs -- there is no way to recover it
+  after the fact.
+
+If your deployment cares about a complete BOM issuance history, schedule
+`met_sync_live()` hourly (or as close to it as your BOM transport budget
+allows) in addition to the daily job. If you only need daily snapshots (e.g.
+you mainly consume `history_daily`/`history_hourly` and Open-Meteo
+forecasts), a daily-only schedule is a reasonable, explicit trade-off --
+just don't expect a complete BOM archive from it.
+
+## `cron` (Linux/macOS)
+
+A typical crontab running an `Rscript` wrapper per verb:
+
+```sh
+# m h dom mon dow command
+0    * * * *  Rscript /opt/meteoTidy/run-sync-live.R    >> /var/log/meteoTidy/live.log    2>&1
+15   2 * * *  Rscript /opt/meteoTidy/run-sync-daily.R   >> /var/log/meteoTidy/daily.log   2>&1
+30   3 1 * *  Rscript /opt/meteoTidy/run-refit.R         >> /var/log/meteoTidy/refit.log   2>&1
+```
+
+Each `run-*.R` script loads the site registry and config, then calls exactly
+one verb -- e.g. `run-sync-live.R`:
+
+```{r}
+#!/usr/bin/env Rscript
+sites  <- meteoTidy::read_sites_yaml("/etc/meteoTidy/sites.yml")
+config <- yaml::read_yaml("/etc/meteoTidy/pipeline-config.yml")
+meteoTidy::met_sync_live(sites, config = config)
+```
+
+## GitHub Actions
+
+A scheduled workflow using `r-lib/actions` to set up R, running the daily
+sync and committing/pushing an updated store (or, more commonly, pushing to
+external storage such as S3/GCS instead of the repo itself):
+
+```yaml
+name: met-sync-daily
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::meteoTidy
+      - name: Run daily sync
+        run: Rscript -e 'meteoTidy::met_sync_daily(meteoTidy::read_sites_yaml("sites.yml"), config = yaml::read_yaml("pipeline-config.yml"))'
+```
+
+A separate hourly workflow (`cron: "0 * * * *"`) runs `met_sync_live()` the
+same way; a separate monthly workflow (`cron: "30 3 1 * *"`) runs
+`met_refit()`.
+
+## `taskscheduleR` (Windows)
+
+For a Windows host, `taskscheduleR::taskscheduler_create()` registers a
+Windows Task Scheduler job that runs an R script on a recurring schedule:
+
+```{r}
+library(taskscheduleR)
+
+taskscheduler_create(
+  taskname = "meteoTidy-sync-live",
+  rscript = "C:/meteoTidy/run-sync-live.R",
+  schedule = "HOURLY"
+)
+
+taskscheduler_create(
+  taskname = "meteoTidy-sync-daily",
+  rscript = "C:/meteoTidy/run-sync-daily.R",
+  schedule = "DAILY",
+  starttime = "02:15"
+)
+
+taskscheduler_create(
+  taskname = "meteoTidy-refit",
+  rscript = "C:/meteoTidy/run-refit.R",
+  schedule = "MONTHLY",
+  startdate = format(Sys.Date(), "%d/%m/%Y")
+)
+```
+
+## `met_backfill()` is not scheduled
+
+`met_backfill()` is an ad hoc, day-0 bootstrap: run it once when onboarding a
+new site (or re-run it manually after a long outage), not on a recurring
+schedule. It pulls full history, ingests any historical AWS logger exports
+you supply, makes initial calibration fits, and returns a donor-coverage
+audit you should read before relying on the gap-fill donor ladder for that
+site (SCOPING §13).
+
+```{r}
+met_backfill(
+  new_site,
+  config = config,
+  aws_export = "exports/new_site-logger.csv"
+)
+```

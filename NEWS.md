@@ -398,3 +398,32 @@
   table throughout -- worked around with an explicit re-registration in a
   new `.onLoad()` (which also now calls the S7-recommended
   `methods_register()`).
+- Pipeline verbs: the four exported, user-scheduled entry points that wire
+  everything else in this package together -- `met_sync_live()` (hourly,
+  best-effort near-real-time obs + forecast head; GHCNh deliberately
+  excluded from the live window for its ~1-week lag), `met_sync_daily()`
+  (daily forecast refresh, incl. seasonal, plus curated `history_hourly`/
+  `history_daily` extension over each source's configured re-fetch window
+  so upstream revisions -- e.g. SILO patched-point updates -- supersede
+  rather than duplicate), `met_refit()` (monthly refit: `correct_refit()`
+  per configured observation source, `verify_run()`, and Parquet partition
+  compaction; the calibration manifest is bumped only when Plan 13's skill
+  gate passes), and `met_backfill()` (ad-hoc day-0 bootstrap: full
+  historical pulls, historical AWS logger export ingestion, initial
+  calibration fits, and a per-site donor-coverage audit via
+  `station_coverage()` so gaps in nearby GHCNh/BOM coverage are visible
+  before the gap-fill donor ladder relies on them). All four are
+  multi-site, incremental (store watermarks), and idempotent -- re-running
+  any of them over the same inputs and clock never duplicates rows or
+  double-advances a watermark. The shared `archive_forecasts()` helper
+  implements the archive-on-every-sync forecast policy (dedup on
+  `(source, model, issue_time)`, Plan 03) and documents which sources'
+  missed issuances can be backfilled later (Open-Meteo, via Previous/
+  Single Runs) versus which cannot (BOM, no historical-issuance API). A
+  dead acquisition source degrades just that site's status to
+  `"degraded"` rather than crashing the run; other sites complete
+  normally (the new `for_each_site()` per-site isolation primitive). A new
+  `vignettes/scheduling.Rmd` documents `cron`/GitHub Actions/
+  `taskscheduleR` recipes for all four verbs and the BOM hourly-vs-daily
+  backfill trade-off. This completes the planned 00-16 implementation
+  series.

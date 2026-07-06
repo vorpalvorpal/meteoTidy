@@ -64,7 +64,7 @@ describe("multi-site processing with per-site isolation", {
     calls <- new.env()
     testthat::local_mocked_bindings(
       .acquire_obs = function(source, site, window, now = NULL, ...) {
-        if (site_ids(site) %||% site@site_id == "site_1")
+        if (site_id(site) == "site_1")
           abort_meteo("dead", class = "http_gone")
         new_obs(make_obs(n = 2, site_id = "site_2"))
       },
