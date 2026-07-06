@@ -41,24 +41,58 @@ NULL
 
 # Map a dictionary variable name to the GRIB `param` short name(s) that
 # provide it (the ECMWF Open Data index's `param` field / this file's
-# `.grib_element_to_param()` translation of GDAL's `GRIB_ELEMENT`).
-# Deliberately incomplete: only `temperature_2m` needs to work end-to-end for
-# the frozen test suite (the skipped end-to-end test only requests
-# "temperature_2m"). Wind speed/direction at 10 m are DERIVED from the
-# "10u"/"10v" u/v vector components (GRIB does not carry speed/direction
-# directly) -- recombining them into canonical speed (m/s, already SI) and
-# meteorological from-direction (degrees) is a small but real bit of vector
-# maths (speed = hypot(u, v), direction = (270 - atan2(v, u) * 180/pi) %% 360)
-# that is NOT exercised by any frozen test here, so it is left unimplemented
-# (see `.ecmwf_param_lookup()`'s use in `fetch_forecast()`, which restricts
-# output rows to single-param/"direct" variables) rather than risking an
-# unverified, untested implementation. This is a documented, deliberate scope
-# cut for this plan, not an oversight.
+# `.grib_element_to_param()` translation of GDAL's `GRIB_ELEMENT`). Wind
+# speed/direction at 10 m are DERIVED from the "10u"/"10v" u/v vector
+# components (GRIB does not carry speed/direction directly) --
+# `.ecmwf_uv_to_wind()` below recombines them.
 .ecmwf_param_lookup <- function() {
   list(
     temperature_2m = "2t",
     wind_speed_10m = c("10u", "10v"),
     wind_direction_10m = c("10u", "10v")
+  )
+}
+
+#' Recombine ECMWF 10u/10v GRIB bands into canonical wind speed/direction
+#'
+#' GRIB never carries wind speed/direction directly, only the u/v vector
+#' components (`"10u"`/`"10v"` GRIB `param` short names, `grib_field_table()`,
+#' R/grib-read.R). This pairs the `"10u"`/`"10v"` rows of `field_tbl` on
+#' `(step, member)` and derives the canonical `wind_speed_10m`
+#' (`hypot(u, v)`) and `wind_direction_10m` rows, reusing `uv_to_dir()`
+#' (R/wind-uv.R) for the direction -- the package's one u/v-to-direction
+#' formula, not re-derived here. `10u`/`10v` are already SI (m/s), so no unit
+#' conversion is needed for either derived variable.
+#'
+#' @param field_tbl A `grib_field_table()`-shaped tibble: `band`, `param`,
+#'   `unit`, `step`, `member`.
+#' @param values Numeric vector, the per-band extracted value, aligned to
+#'   `field_tbl$band` (`values[i]` is the value of `field_tbl[i, ]`'s band).
+#' @return A long tibble (`variable`, `value`, `unit`, `step`, `member`):
+#'   one `wind_speed_10m` and one `wind_direction_10m` row per matched
+#'   `(step, member)` 10u/10v pair. An unmatched 10u or 10v row (no
+#'   corresponding partner at the same step/member) contributes nothing.
+#' @keywords internal
+#' @noRd
+.ecmwf_uv_to_wind <- function(field_tbl, values) {
+  field_tbl$value_raw <- values[seq_len(nrow(field_tbl))]
+  u_rows <- field_tbl[field_tbl$param == "10u", , drop = FALSE]
+  v_rows <- field_tbl[field_tbl$param == "10v", , drop = FALSE]
+
+  key <- function(df) paste(df$step, df$member, sep = "\r")
+  m <- match(key(u_rows), key(v_rows))
+  matched <- !is.na(m)
+  u_rows <- u_rows[matched, , drop = FALSE]
+  v_rows <- v_rows[m[matched], , drop = FALSE]
+
+  u <- u_rows$value_raw
+  v <- v_rows$value_raw
+
+  vctrs::vec_rbind(
+    tibble::tibble(variable = "wind_speed_10m", value = sqrt(u^2 + v^2),
+                   unit = "m/s", step = u_rows$step, member = u_rows$member),
+    tibble::tibble(variable = "wind_direction_10m", value = uv_to_dir(u, v),
+                   unit = "degree", step = u_rows$step, member = u_rows$member)
   )
 }
 
@@ -267,10 +301,8 @@ S7::method(fetch_forecast, source_ecmwf) <- function(
   field_tbl <- grib_field_table(rast)
   field_tbl$value_raw <- vals[seq_len(nrow(field_tbl))]
 
-  # Only the direct-param (temperature_2m via "2t") path is wired end-to-end;
-  # u/v-derived wind variables would need vector recombination not built here
-  # (see `.ecmwf_param_lookup()` comment) -- restrict rows to variables with a
-  # single, direct param mapping.
+  # Direct-param variables (temperature_2m via "2t"): a single GRIB param
+  # maps straight to the canonical variable.
   direct_vars <- names(Filter(function(p) length(p) == 1, .ecmwf_param_lookup()))
   variables_direct <- intersect(variables, direct_vars)
 
@@ -301,6 +333,31 @@ S7::method(fetch_forecast, source_ecmwf) <- function(
       value = value_canonical
     )
   })
+
+  # Derived wind variables (wind_speed_10m/wind_direction_10m): recombined
+  # from the "10u"/"10v" bands via .ecmwf_uv_to_wind() -- already canonical
+  # (m/s / degree), no to_canonical() conversion needed.
+  wind_vars_requested <- intersect(variables, c("wind_speed_10m", "wind_direction_10m"))
+  if (length(wind_vars_requested) > 0 && any(field_tbl$param %in% c("10u", "10v"))) {
+    uv <- .ecmwf_uv_to_wind(field_tbl, field_tbl$value_raw)
+    uv <- uv[uv$variable %in% wind_vars_requested, , drop = FALSE]
+    if (nrow(uv) > 0) {
+      step_hours_col <- suppressWarnings(as.numeric(uv$step))
+      rows[[length(rows) + 1]] <- tibble::tibble(
+        site_id = site_id(site),
+        source = adapter@source_id,
+        model = paste0("ifs_", adapter@stream),
+        issue_time = issue_time,
+        valid_time = issue_time + step_hours_col * 3600,
+        lead_time = as.difftime(step_hours_col, units = "hours"),
+        member = as.integer(uv$member),
+        stat = NA_character_,
+        variable = uv$variable,
+        value = uv$value
+      )
+    }
+  }
+
   rows <- rows[!vapply(rows, is.null, logical(1))]
 
   out <- if (length(rows) == 0) {
