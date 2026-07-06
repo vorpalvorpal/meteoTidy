@@ -174,6 +174,12 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_tier_mismatch",
       # Plan 12 -- EMOS correction tier (R/tier-emos.R)
       "meteoTidy_error_lead_unresolved",
+      # Plan 14 -- secrets (R/secrets.R)
+      "meteoTidy_error_secret_unresolved",
+      "meteoTidy_error_bad_secret_ref",
+      "meteoTidy_error_secret_leak",
+      # Plan 08 -- ECMWF adapter (R/source-ecmwf.R)
+      "meteoTidy_error_unknown_ecmwf_stream",
       # Plan 15 -- classed tibble + wide emitter (R/met-table.R,
       # R/met-table-dplyr.R, R/met-ingest.R)
       "meteoTidy_error_provenance_incomplete",
@@ -240,6 +246,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied.", # nolint: line_length_linter.
       "correct_apply() found the selected tier disagreed with the current calibration manifest's recorded tier.", # nolint: line_length_linter.
       "fit_emos() was asked to fit lead-aware calibration on rows whose lead_time is NA (a Historical-Forecast proxy row).", # nolint: line_length_linter.
+      "resolve_secret() could not find the referenced environment variable or keyring entry.", # nolint: line_length_linter.
+      "resolve_secret() was given a ref naming neither env nor keyring.",
+      "assert_no_secrets_in() found a resolved secret value inside a store-bound data frame.", # nolint: line_length_linter.
+      "source_ecmwf()'s stream is not one of the recognised ECMWF Open Data stream names.", # nolint: line_length_linter.
       "new_met_table()'s provenance argument does not cover every value column of x.", # nolint: line_length_linter.
       "new_met_table()'s versions argument is missing schema_version or calibration_manifest_version.", # nolint: line_length_linter.
       "A dplyr operation on a met_table invalidated its provenance (dropped a value column, or bind_rows mixed incompatible provenance); downgraded to a plain tibble.", # nolint: line_length_linter.

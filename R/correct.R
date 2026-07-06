@@ -1,13 +1,12 @@
 # Plan 11 -- the correction lifecycle: correct_apply() (daily; applies the
-# current calibration) and the correct_refit() skeleton (monthly; delegates
-# fitting to Plan 12). Reads/writes the Plan 03 calibration store instead of
+# current calibration) and correct_refit() (monthly; fits and skill-gates a
+# new calibration). Reads/writes the Plan 03 calibration store instead of
 # a watermark for its main branching logic -- the tier a variable is
 # corrected at depends on what has been fitted and manifest-recorded for
 # that (site, variable, source), not on how much time has passed.
 #
 # The real `shrink_to_climatology()` (a 3-arg `(corrected, climatology,
-# weight)` blend primitive) now lives in `R/shrinkage.R`, replacing this
-# file's former placeholder identity pass-through. `correct_apply()` still
+# weight)` blend primitive) lives in `R/shrinkage.R`. `correct_apply()`
 # calls it directly (by name) from its own `target == "forecast"` branch
 # below -- see `.correct_forecast_climatology()` and the call site inside
 # `correct_apply()` -- rather than routing through
@@ -16,16 +15,41 @@
 # the whole function for that test and only asserts call counts on the
 # record/forecast branches) keeps working unchanged.
 
-# Placeholder climatology lookup for the forecast-shrinkage path. Plan 13
-# does not yet exist (the real per-lead-bucket verified-skill weight is its
-# scope), so there is no climatology series or skill-derived weight to read
-# yet either. Until Plan 13 wires those in, this returns `obs$value`
-# unchanged as "climatology" and a weight of `1` ("trust the correction
-# fully") -- i.e. shrink_to_climatology() is a no-op in practice today. This
-# is a known, documented gap: Plan 13 replaces both the climatology lookup
-# and the weight with real verified-skill-derived values.
-.correct_forecast_climatology <- function(corrected, leads) {
-  shrink_to_climatology(corrected$value, climatology = corrected$value, weight = 1)
+# Real climatology lookup + per-row skill weight for the forecast-shrinkage
+# path (Plan 13 wiring). The climatology series is `history_daily`'s
+# day-of-year pooled mean (`build_history_daily()` + `baseline_climatology()`,
+# Plans 10/13) over the trailing ~3 years; a row with no history to pool
+# against falls back to its own (uncorrected) value, i.e. no shrinkage. The
+# weight is derived from `corrected$tier`, already stamped per row by
+# `correct_apply()`'s per-variable loop: a fitted tier (`mean_bias`/`qmap`/
+# `emos`) only ever reaches the manifest via `correct_refit()`'s skill gate
+# (SCOPING section 7.1), so its presence *is* the verified-skill evidence --
+# weight `1` (trust the correction fully). No calibration beyond `physical`/
+# `raw` has passed that gate, so those get weight `0` (shrink fully to
+# climatology). This is coarser than a true per-lead-bucket weight (this
+# call site has no `lead_time` column to key a finer weight on -- `leads` is
+# reserved for a future finer-grained version), but it is real, not a
+# placeholder identity pass-through.
+.correct_forecast_climatology <- function(store_root, site, corrected, leads = NULL) {
+  if (nrow(corrected) == 0) {
+    return(corrected$value)
+  }
+
+  window <- list(from = min(corrected$datetime_utc) - as.difftime(1095, units = "days"),
+                 to = max(corrected$datetime_utc))
+  hist <- build_history_daily(store_root, site, window)
+
+  climatology <- vapply(seq_len(nrow(corrected)), function(i) {
+    if (nrow(hist) == 0) {
+      return(corrected$value[[i]])
+    }
+    base <- baseline_climatology(hist, corrected$datetime_utc[[i]], corrected$variable[[i]])
+    if (is.na(base$mean)) corrected$value[[i]] else base$mean
+  }, numeric(1))
+
+  weight <- ifelse(corrected$tier %in% c("mean_bias", "qmap", "emos"), 1, 0)
+
+  shrink_to_climatology(corrected$value, climatology = climatology, weight = weight)
 }
 
 # Read a site's current observations for (source, variable) from the store.
@@ -49,19 +73,21 @@
   correct_physical(obs, site = site)
 }
 
-# Apply a fitted (non-physical) tier's calibration to `obs`. Plan 11 does
-# not implement the fitted-tier apply functions themselves (Plan 12's
-# scope); this is the seam Plan 12 wires its per-tier apply_* functions
-# into. Until Plan 12 lands, fall back to a mean_bias-shaped apply using the
-# shared transfer engine's offset (R/transfer.R) for tiers whose coeffs
-# tibble carries an `offset` column, and otherwise pass values through
-# unchanged with the manifest's recorded tier stamped -- this plan's tests
-# never reach this branch (day 0, no calibration written, is what
-# test-correct-apply.R exercises), so it is deliberately minimal.
+# Apply a fitted (non-physical) tier's calibration to `obs`, delegating to
+# Plan 12's real per-tier apply_*() function. `newdata`'s columns are named
+# to match what each apply_*() expects (`issue_time`/`forecast`) even though
+# `obs` is observation-shaped (`datetime_utc`/`value`): the harmonic/qmap/
+# EMOS fits were trained on `forecast_obs_pairs()`-shaped pairs via
+# `correct_refit()`, so applying them here reuses the identical column
+# names by design, not by coincidence.
 .correct_apply_fitted <- function(obs, coeffs, tier) {
-  if ("offset" %in% names(coeffs) && nrow(coeffs) > 0) {
-    obs$value <- obs$value - coeffs$offset[[1]]
-  }
+  newdata <- tibble::tibble(issue_time = obs$datetime_utc, forecast = obs$value)
+  obs$value <- switch(tier,
+    mean_bias = apply_mean_bias(coeffs, newdata)$value,
+    qmap = apply_qmap(coeffs, newdata),
+    emos = apply_emos(coeffs, newdata)$mean,
+    obs$value
+  )
   obs$tier <- tier
   obs
 }
@@ -165,54 +191,195 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
   corrected <- vctrs::vec_rbind(!!!results)
 
   if (target == "forecast") {
-    # Plan 12's real shrink_to_climatology(corrected, climatology, weight)
-    # blend primitive (R/shrinkage.R). No climatology series or verified
-    # skill weight exists yet (Plan 13's scope) -- see
-    # .correct_forecast_climatology()'s documented gap above -- so this
-    # calls shrink_to_climatology() with a placeholder weight = 1 ("trust
-    # the correction fully") until Plan 13 supplies the real weight per
-    # lead bucket.
-    corrected$value <- .correct_forecast_climatology(corrected, leads = leads)
+    corrected$value <- .correct_forecast_climatology(store_root, site, corrected, leads = leads)
   }
 
   corrected
 }
 
-#' Refit correction calibrations for a site (monthly lifecycle skeleton)
+# A training_summary row (see tests/testthat/helper-correct.R's builder of
+# the same shape) derived from real assembled pairs: overlap_months from the
+# issue_time span, n_pairs from the row count. `has_archive`/`truth_source`
+# are always TRUE/"observed" here -- the Historical-Forecast pseudo-truth
+# special case (SCOPING section 7.2) is Open-Meteo-specific bookkeeping that
+# assemble_verification_pairs() does not currently distinguish in its output.
+.correct_refit_training_summary <- function(pairs, source, variable) {
+  overlap_months <- as.numeric(difftime(max(pairs$issue_time), min(pairs$issue_time),
+                                        units = "days")) / 30.44
+  tibble::tibble(
+    source = source, variable = variable, lead_bucket = NA_character_,
+    overlap_months = overlap_months, n_pairs = nrow(pairs),
+    has_archive = TRUE, truth_source = "observed"
+  )
+}
+
+# fit_fn/apply_fn pair for one fitted tier, both operating directly on a
+# forecast_obs_pairs()-shaped tibble (issue_time/forecast/observation/
+# lead_time) -- the exact shape rolling_origin_score()'s fit_fn/apply_fn
+# contract expects (R/verify.R), and the exact shape correct_refit()'s
+# `pairs` already is. `apply_fn` always returns a plain numeric vector.
+.correct_refit_fit_apply <- function(tier) {
+  switch(tier,
+    mean_bias = list(
+      fit = function(train) fit_mean_bias(train),
+      apply = function(fit, newdata) apply_mean_bias(fit, newdata)$value
+    ),
+    qmap = list(
+      fit = function(train) fit_qmap(train),
+      apply = function(fit, newdata) apply_qmap(fit, newdata)
+    ),
+    emos = list(
+      fit = function(train) fit_emos(train, lead_bucket = .verify_lead_bucket(train$lead_time[[1]])),
+      apply = function(fit, newdata) apply_emos(fit, newdata)$mean
+    )
+  )
+}
+
+# Like rolling_origin_score() (R/verify.R), but returns the per-row
+# out-of-sample absolute errors instead of an aggregate mae/rmse -- the raw
+# material a moving-block bootstrap (block_bootstrap_ci(), R/verify-
+# bootstrap.R) needs to test whether a candidate tier's improvement over the
+# incumbent is significant, not just numerically smaller. Window selection
+# (which rows fall in which origin's training set vs scoring window) depends
+# only on `pairs$issue_time`, so calling this once with the candidate
+# fit/apply and once with the incumbent fit/apply scores the identical set
+# of out-of-sample rows -- a fair, paired comparison.
+.rolling_origin_errors <- function(pairs, fit_fn, apply_fn, step, buffer) {
+  step_dt <- .parse_period(step)
+  buffer_dt <- .parse_period(buffer)
+  pairs <- pairs[order(pairs$issue_time), , drop = FALSE]
+  if (nrow(pairs) == 0) {
+    return(numeric(0))
+  }
+
+  origins <- seq(min(pairs$issue_time), max(pairs$issue_time), by = step_dt)
+  errs <- numeric(0)
+  for (origin in origins) {
+    origin <- as.POSIXct(origin, tz = "UTC", origin = "1970-01-01")
+    train <- pairs[pairs$issue_time < origin - buffer_dt, , drop = FALSE]
+    in_window <- pairs$issue_time >= origin & pairs$issue_time < origin + step_dt
+    score_set <- pairs[in_window, , drop = FALSE]
+    if (nrow(train) == 0 || nrow(score_set) == 0) {
+      next
+    }
+    fit <- fit_fn(train)
+    corrected <- apply_fn(fit, score_set)
+    errs <- c(errs, abs(corrected - score_set$observation))
+  }
+  errs
+}
+
+# The step/buffer rolling-origin window shared by correct_refit()'s
+# candidate-vs-incumbent comparison, matching verify_run()'s own defaults
+# (R/verify.R) so the two report comparable numbers.
+.correct_refit_step <- function() "30 days"
+.correct_refit_buffer <- function() "1 day"
+
+# Fit/refit one variable's calibration for (site, source), gated on Plan
+# 13's skill verdict. Writes a new calibration version only when the gate
+# passes; otherwise leaves the incumbent (if any) untouched.
+.correct_refit_variable <- function(store_root, site, sid, source, variable, now) {
+  pairs <- assemble_verification_pairs(store_root, site, sources = source, variables = variable)
+  if (nrow(pairs) == 0) {
+    return(invisible(NULL))
+  }
+
+  training_summary <- .correct_refit_training_summary(pairs, source, variable)
+  # A promote = TRUE placeholder here only selects the *candidate* tier to
+  # attempt fitting (the data-availability gate's answer); the real,
+  # evidence-based promote/keep decision is the skill_verdict_compute() call
+  # below, which alone gates the calib_write().
+  candidate_verdict <- tibble::tibble(variable = variable, lead_bucket = NA_character_,
+                                      promote = TRUE, shrink_weight = 1,
+                                      consistency_violation_rate = 0)
+  gate_tier <- tier_select(site, source, variable, lead_bucket = NA,
+                           training_summary = training_summary, skill_verdict = candidate_verdict)
+  if (!(gate_tier %in% c("mean_bias", "qmap", "emos"))) {
+    return(invisible(NULL)) # below the fitted-tier floor: nothing to fit or persist
+  }
+
+  if (gate_tier == "emos") {
+    pairs <- pairs[!is.na(pairs$lead_time), , drop = FALSE] # SCOPING section 7.2
+  }
+  if (nrow(pairs) == 0) {
+    return(invisible(NULL))
+  }
+
+  fit_apply <- .correct_refit_fit_apply(gate_tier)
+  step <- .correct_refit_step()
+  buffer <- .correct_refit_buffer()
+
+  candidate_errs <- .rolling_origin_errors(pairs, fit_apply$fit, fit_apply$apply, step, buffer)
+  incumbent_errs <- .rolling_origin_errors(pairs, .verify_identity_fit, .verify_identity_apply,
+                                           step, buffer)
+  n <- min(length(candidate_errs), length(incumbent_errs))
+  if (n == 0) {
+    return(invisible(NULL)) # not enough out-of-sample data to evaluate the gate
+  }
+  candidate_errs <- candidate_errs[seq_len(n)]
+  incumbent_errs <- incumbent_errs[seq_len(n)]
+
+  scores <- tibble::tibble(
+    variable = variable, lead_bucket = NA_character_,
+    candidate = sqrt(mean(candidate_errs^2)), incumbent = sqrt(mean(incumbent_errs^2))
+  )
+  boot <- block_bootstrap_ci(incumbent_errs - candidate_errs, block_len = 7L, R = 500L, seed = 1L)
+  bootstrap <- tibble::tibble(
+    variable = variable, lead_bucket = NA_character_,
+    significant = boot$significant, ci_lower = boot$ci[[1]], ci_upper = boot$ci[[2]]
+  )
+
+  verdict <- skill_verdict_compute(scores, bootstrap)
+  if (!isTRUE(verdict$promote[[1]])) {
+    return(invisible(NULL)) # skill gate failed: keep the incumbent calibration
+  }
+
+  final_fit <- fit_apply$fit(pairs)
+  calib_write(
+    store_root, sid, variable, source, gate_tier, final_fit,
+    meta = list(train_start = min(pairs$issue_time), train_end = max(pairs$issue_time),
+               n_pairs = nrow(pairs)),
+    now = now
+  )
+  invisible(NULL)
+}
+
+#' Refit correction calibrations for a site (monthly lifecycle)
 #'
-#' **Skeleton.** This plan implements the orchestration shape and the
-#' `physical`-tier day-0 path; the actual per-tier fitting functions (mean-
-#' bias, qmap, EMOS, MBC) are Plan 12's scope, and the skill verdict this
-#' function would gate the write on is Plan 13's scope. No test exercises
-#' `correct_refit()` directly (Plan 11's test files only exercise
-#' `correct_apply()`/`tier_select()`/the physical adjustments) -- this
-#' function documents the intended monthly job shape so Plan 12/13 have a
-#' concrete seam to plug into, without faking coverage that doesn't exist.
+#' Per requested variable (SCOPING section 7.1): assembles training pairs by
+#' joining the Plan 03 forecast archive with curated observations
+#' (`assemble_verification_pairs()`, R/verify.R); summarises them into a
+#' `training_summary` and calls `tier_select()` to pick a *candidate* tier;
+#' fits that tier via Plan 12's `fit_mean_bias()`/`fit_qmap()`/`fit_emos()`;
+#' scores the candidate against the incumbent (raw/uncorrected) tier
+#' out-of-sample (`rolling_origin_score()`-style rolling-origin evaluation,
+#' never on the fit's own training window); and gates the write on Plan 13's
+#' skill verdict (`skill_verdict_compute()`, significance via
+#' `block_bootstrap_ci()`): `calib_write()` **only if** the gate promotes,
+#' otherwise the incumbent calibration (if any) is left untouched.
 #'
-#' Intended flow once Plan 12/13 land:
-#' 1. Assemble training pairs by joining the Plan 03 forecast archive with
-#'    curated observations (SCOPING section 4) -- no training-pairs-assembly
-#'    function exists yet in this codebase; Plan 12/16 supply it.
-#' 2. Summarise the pairs into a `training_summary` and call `tier_select()`.
-#' 3. Delegate fitting to Plan 12's per-tier `fit_*()` functions for the
-#'    selected tier.
-#' 4. Request Plan 13's skill verdict for the freshly-fit calibration.
-#' 5. Write the new calibration + manifest bump (`calib_write()`, Plan 03)
-#'    **only if** the skill gate passes; otherwise keep the incumbent
-#'    calibration as current.
+#' Model-only variables (SCOPING section 7.3) are skipped -- there is no
+#' site truth to fit a bias correction against. A variable with no
+#' forecast/observation overlap yet is skipped silently (nothing to fit).
 #'
 #' @param store_root Root directory of the store.
 #' @param site A [met_site()] object.
-#' @param source Data source name.
+#' @param source Data source name (the calibration's key, alongside
+#'   `variable`; see `calib_write()`).
 #' @param variables Character vector of variables to refit.
 #' @param now Injectable current time; see `.now()`.
-#' @return Invisibly, `NULL`. No calibration is written by this skeleton.
+#' @return Invisibly, `NULL`. Calibrations are written as a side effect via
+#'   `calib_write()`, one version per variable whose skill gate passes.
 #' @keywords internal
 #' @noRd
 correct_refit <- function(store_root, site, source, variables, now = .now()) {
-  # TODO(Plan 12/13): assemble training pairs, call tier_select(), delegate
-  # to Plan 12's fit_*() functions, request Plan 13's skill verdict, and
-  # calib_write() only on a passing verdict. Not implemented: no training-
-  # pairs-assembly function or fitted-tier fit_*() functions exist yet.
+  sid <- site_id(site)
+  for (variable in variables) {
+    dict_row <- met_variable(variable)
+    if (isTRUE(dict_row$measurability_class == "model_only")) {
+      next
+    }
+    .correct_refit_variable(store_root, site, sid, source, variable, now = now)
+  }
   invisible(NULL)
 }
