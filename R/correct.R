@@ -229,7 +229,9 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
       apply = function(fit, newdata) apply_qmap(fit, newdata)
     ),
     emos = list(
-      fit = function(train) fit_emos(train, lead_bucket = .verify_lead_bucket(train$lead_time[[1]])),
+      fit = function(train) {
+        fit_emos(train, lead_bucket = .verify_lead_bucket(train$lead_time[[1]]))
+      },
       apply = function(fit, newdata) apply_emos(fit, newdata)$mean
     )
   )
@@ -337,8 +339,10 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
   final_fit <- fit_apply$fit(pairs)
   calib_write(
     store_root, sid, variable, source, gate_tier, final_fit,
-    meta = list(train_start = min(pairs$issue_time), train_end = max(pairs$issue_time),
-               n_pairs = nrow(pairs)),
+    meta = list(
+      train_start = min(pairs$issue_time), train_end = max(pairs$issue_time),
+      n_pairs = nrow(pairs)
+    ),
     now = now
   )
   invisible(NULL)
