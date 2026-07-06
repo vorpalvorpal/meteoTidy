@@ -24,6 +24,7 @@ Imports:
     arrow,
     cli,
     crch,
+    digest,
     dplyr,
     glue,
     httr2,
@@ -74,6 +75,15 @@ Collate:
     'grib-read.R'
     'history-products.R'
     'http.R'
+    'met-table.R'
+    'met-table-hash.R'
+    'met-ingest.R'
+    'met-table-dplyr.R'
+    'verify.R'
+    'store-forecast.R'
+    'store-obs.R'
+    'read-api.R'
+    'met-wide.R'
     'meteoTidy-package.R'
     'model-only.R'
     'openmeteo-endpoints.R'
@@ -84,10 +94,6 @@ Collate:
     'qc-solar.R'
     'qc-spatial.R'
     'qc.R'
-    'verify.R'
-    'store-forecast.R'
-    'store-obs.R'
-    'read-api.R'
     'schema-forecast.R'
     'schema-obs.R'
     'schema.R'

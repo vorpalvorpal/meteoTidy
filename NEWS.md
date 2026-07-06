@@ -347,3 +347,54 @@
   `"site_id"` and R's partial matching resolved it there instead of falling
   through to `...` -- fixed by renaming the parameter to remove the prefix
   relationship entirely, rather than relying on argument order.
+- The meteoHazard interface: `met_table`, a classed tibble (S3, extending
+  `tbl_df` -- the sf/tsibble pattern, not an opaque S7 wrapper) carrying
+  per-variable provenance (`tier`, `train_overlap`, `source`), site/window
+  keys, and schema/calibration-manifest versions (`new_met_table()`,
+  `met_provenance()`/`met_keys()`/`met_versions()`). `dplyr` verbs
+  (`filter()`, `arrange()`, `mutate()`, `select()`) keep the class and
+  metadata alive through ordinary wrangling; an operation that genuinely
+  invalidates the metadata -- dropping a tracked value column, or
+  `bind_rows()` combining two `met_table`s whose provenance disagrees for
+  the same variable -- downgrades **visibly** to a plain tibble with a
+  `met_table_downgraded` warning, rather than silently carrying stale
+  attributes. Because `dplyr`'s reconstruction hook cannot see an in-place
+  value mutation (`mutate(x = x + 1)` leaves the class and provenance
+  untouched while the data silently changes), every value column is
+  content-hashed (via `digest`, a new `Imports` dependency) at construction
+  time; `met_validate_boundary()` recomputes and compares those hashes,
+  downgrading just the affected column's `tier` to `"unverified"` on a
+  mismatch -- the honest-scoping guarantee that metadata is authoritative
+  only *at a validated boundary*, made enforceable rather than aspirational
+  (the review fix). `met_wide()` is the one-call section-3.1 wide emitter:
+  `kind = "record"`/`"forecast"` route through `met_record()`/
+  `met_forecast_archive()` (Plan 14), widen to one row per timestamp with
+  the `datetime_utc`/`valid_time` index renamed to `time` at this outer
+  boundary only, and keep a variable absent from the underlying data as a
+  stable all-`NA` column when explicitly requested via `variables =`.
+  `met_ingest()` is the dual-accept boundary validator meteoHazard calls
+  once: a classed `met_table` is hash-validated and trusted thereafter; a
+  plain tibble is schema-checked on entry (a `time` column is the minimum
+  section-3.1 contract) and wrapped with its provenance marked entirely
+  `"unverified"`. `met_assert_single_tier()` implements the
+  single-provenance-class rule, warning when a derived index would mix
+  inputs from more than one correction tier (e.g. a corrected 10 m wind
+  with a raw 80 m wind feeding one shear calculation).
+- Fixed a real, reproducible bug found while implementing the classed
+  tibble: reconstructing a `met_table`'s class from the *intermediate*
+  object's own class (rather than always rebuilding from
+  `tibble::as_tibble()`) silently dropped `tbl_df`/`tbl` when that
+  intermediate happened to be a bare `data.frame` (as `dplyr::mutate()`'s
+  internal machinery produces) -- invisible until a keep-all `mutate()`
+  (which still runs its result through a column-selection step) then
+  dispatched to `` `[.data.frame` `` instead of `` `[.tbl_df` ``, silently
+  losing the provenance/keys/versions/content-hash attributes.
+  Also: an unrelated, package-wide `S7`/base-generic interaction -- any
+  `S7::method(print, ...)`/`S7::method(format, ...)` registration anywhere
+  in the package (several earlier plans' adapter classes have one) was
+  found to break ordinary S3 dispatch of `print()`/`format()` for *every
+  other* plain-S3 class in the package when called from outside it, even
+  though the S3 method stayed correctly listed in the package's own methods
+  table throughout -- worked around with an explicit re-registration in a
+  new `.onLoad()` (which also now calls the S7-recommended
+  `methods_register()`).

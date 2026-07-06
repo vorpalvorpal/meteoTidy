@@ -173,7 +173,14 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 11 -- correction lifecycle (R/correct.R)
       "meteoTidy_error_tier_mismatch",
       # Plan 12 -- EMOS correction tier (R/tier-emos.R)
-      "meteoTidy_error_lead_unresolved"
+      "meteoTidy_error_lead_unresolved",
+      # Plan 15 -- classed tibble + wide emitter (R/met-table.R,
+      # R/met-table-dplyr.R, R/met-ingest.R)
+      "meteoTidy_error_provenance_incomplete",
+      "meteoTidy_error_missing_versions",
+      "meteoTidy_warning_met_table_downgraded",
+      "meteoTidy_error_schema_violation",
+      "meteoTidy_warning_mixed_tier"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -232,7 +239,12 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "fit_transfer() was called with source/target series that share no overlapping timestamp to fit against.", # nolint: line_length_linter.
       "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied.", # nolint: line_length_linter.
       "correct_apply() found the selected tier disagreed with the current calibration manifest's recorded tier.", # nolint: line_length_linter.
-      "fit_emos() was asked to fit lead-aware calibration on rows whose lead_time is NA (a Historical-Forecast proxy row)." # nolint: line_length_linter.
+      "fit_emos() was asked to fit lead-aware calibration on rows whose lead_time is NA (a Historical-Forecast proxy row).", # nolint: line_length_linter.
+      "new_met_table()'s provenance argument does not cover every value column of x.", # nolint: line_length_linter.
+      "new_met_table()'s versions argument is missing schema_version or calibration_manifest_version.", # nolint: line_length_linter.
+      "A dplyr operation on a met_table invalidated its provenance (dropped a value column, or bind_rows mixed incompatible provenance); downgraded to a plain tibble.", # nolint: line_length_linter.
+      "met_ingest() received a plain tibble that does not satisfy the section 3.1 wide schema (no time column).", # nolint: line_length_linter.
+      "met_assert_single_tier() found a derived index mixing more than one correction tier." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )
