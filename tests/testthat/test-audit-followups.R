@@ -104,19 +104,54 @@ describe("assemble_verification_pairs() real store-read (Plan 13 gap)", {
 
 describe("wide emitter provenance + ensemble handling (Plan 15 gaps)", {
   it("threads the real per-variable correction tier into met_wide() provenance", {
-    # `.met_wide_provenance()` (R/met-wide.R) hardcodes tier = "raw" for every
-    # column, deferring "real per-variable tier" to Plan 16 — which never
-    # threaded it. Coupled to IMPLEMENTER_PROMPT.md item 1 (once corrections
-    # actually run, corrected columns must report their real tier, not "raw").
-    skip("pending: real per-variable tier not threaded into met_wide() provenance — see IMPLEMENTER_PROMPT.md item 6")
+    # `.met_wide_provenance()` (R/met-wide.R) used to hardcode tier = "raw" for
+    # every column. Now that item 1 makes calib_manifest() an honest record of
+    # what's actually been fitted and promoted, met_wide() looks a variable's
+    # current tier up there instead.
+    root <- local_store()
+    site <- make_test_site(store_root = root)
+
+    calib_write(root, "test", "temperature_2m", "site_aws", "qmap",
+               tibble::tibble(group = "__pooled__"),
+               list(train_start = as.POSIXct("2025-01-01", tz = "UTC"),
+                    train_end = as.POSIXct("2025-06-01", tz = "UTC"), n_pairs = 200))
+
+    obs <- make_obs(n = 3, variable = "temperature_2m", source = "site_aws")
+    testthat::local_mocked_bindings(met_record = function(...) obs)
+
+    out <- met_wide(site,
+                    window = list(from = as.POSIXct("2026-01-01", tz = "UTC"),
+                                  to = as.POSIXct("2026-01-02", tz = "UTC")),
+                    kind = "record")
+    prov <- met_provenance(out)
+    expect_equal(prov$tier[prov$variable == "temperature_2m"], "qmap")
   })
 
   it("does not silently collapse ensemble members when widening a forecast", {
-    # `.widen_forecast()` keeps one value per (valid_time, variable) — first row
-    # wins — silently dropping all but one ensemble member. The intended
-    # wide-forecast semantics for ensembles are undecided (member column? mean?);
-    # the implementer must decide and implement, then un-skip this.
-    skip("pending: ensemble wide-forecast contract undecided — see IMPLEMENTER_PROMPT.md item 6")
+    # `.widen_forecast()` used to keep one value per (valid_time, variable) —
+    # first row wins — silently dropping all but one ensemble member. The
+    # decided contract (see R/met-wide.R): the wide table reports the
+    # ensemble MEAN per (valid_time, variable) — a per-member trajectory
+    # table already exists via met_forecast_archive(members = TRUE).
+    root <- local_store()
+    site <- make_test_site(store_root = root)
+
+    issue <- as.POSIXct("2026-01-01", tz = "UTC")
+    valid <- issue + 24 * 3600
+    fc <- tibble::tibble(
+      site_id = "test", source = "openmeteo", model = "test_model",
+      issue_time = issue, valid_time = valid,
+      lead_time = as.difftime(24, units = "hours"),
+      member = 1:3, stat = NA_character_,
+      variable = "temperature_2m", value = c(10, 20, 30)
+    )
+    store_write_forecast(root, new_forecast(fc))
+
+    out <- met_wide(site,
+                    window = list(from = valid - 3600, to = valid + 3600),
+                    kind = "forecast", variables = "temperature_2m",
+                    now = issue)
+    expect_equal(as.numeric(out$temperature_2m), 20)
   })
 })
 

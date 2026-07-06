@@ -27,43 +27,75 @@ NULL
 }
 
 # Widen a canonical forecast tibble to one row per `valid_time`, one column
-# per variable -- the forecast analogue of `widen_obs()`. Deliberately
-# simple: this plan's tests only exercise routing (that `met_forecast_archive()`
-# was called), not the exact shape of the forecast-widening result, so this
-# does not attempt member/stat handling beyond keeping a single value per
-# (valid_time, variable) (the first row wins on a duplicate, matching how
-# `widen_obs()` resolves a duplicate key by `match()`).
+# per variable -- the forecast analogue of `widen_obs()`.
+#
+# DECIDED ensemble contract (post-implementation audit, see
+# IMPLEMENTER_PROMPT.md item 6): the section 3.1 wide shape is one row per
+# timestamp, one column per variable (SCOPING section 3.1) -- a per-member
+# trajectory table already exists (`met_forecast_archive(members = TRUE)`),
+# so the wide emitter does not attempt to also be one. Per (valid_time,
+# variable), this takes the **ensemble mean across member rows** when
+# members are present (a deterministic single row is the mean of one, so
+# this is a no-op for non-ensemble sources) -- never a first-row-wins pick,
+# which would silently and arbitrarily drop every member but one. Named
+# `stat` summary rows (e.g. a source's own precomputed "min"/"max") are
+# excluded from the mean: mixing heterogeneous stats into an unweighted
+# average would be meaningless.
 .widen_forecast <- function(fc, variables) {
   base <- unique(fc["valid_time"])
   base <- base[order(base$valid_time), , drop = FALSE]
 
   wide <- base
   for (v in variables) {
-    sub <- fc[fc$variable == v, c("valid_time", "value")]
-    matched <- sub$value[match(wide$valid_time, sub$valid_time)]
+    sub <- fc[fc$variable == v & is.na(fc$stat), c("valid_time", "value")]
+    agg <- stats::aggregate(value ~ valid_time, data = sub, FUN = mean, na.rm = TRUE)
+    matched <- agg$value[match(wide$valid_time, agg$valid_time)]
     wide[[v]] <- if (length(matched) == 0) rep(NA_real_, nrow(wide)) else matched
   }
 
   tibble::as_tibble(wide)
 }
 
-# Build a simple, honest provenance tibble for `met_wide()`'s output. Plan 16
-# is where full pipeline-derived per-variable tier data gets threaded through;
-# at this point in the series the only tier information reliably available is
-# whatever the source data's own `method`/`source` columns carry, so this
-# builds the plainest defensible provenance: `tier = "raw"` (a placeholder --
-# no richer per-variable correction-tier metadata is available yet from
-# `met_record()`/`met_forecast_archive()`'s return shape) and `source` taken
-# from the underlying long table when present, else `NA`.
-.met_wide_provenance <- function(value_cols, long, train_overlap = 0) {
+# Build `met_wide()`'s output provenance, with a real per-variable
+# correction tier (post-implementation audit, see IMPLEMENTER_PROMPT.md item
+# 6: "once item 1 lands, thread the real per-variable correction tier
+# through"). Item 1 (R/correct.R's correct_refit()) is what makes
+# calib_manifest() an honest source of truth for "what tier is this
+# (variable, source) actually calibrated at", so this looks each value
+# column's *current* manifest tier up there instead of hardcoding `"raw"`:
+#
+#  - model-only variables (SCOPING section 7.3) have no site truth to
+#    correct against and are always `"raw"`;
+#  - a variable with no calibration on file yet is `"physical"` (the day-0
+#    default `correct_apply()` itself falls back to);
+#  - otherwise, the highest-version manifest row's `tier` for
+#    `(variable, source)`, where `source` is the value column's own source
+#    (from the underlying long table, same lookup this function always did).
+.met_wide_provenance <- function(store_root, site_id, value_cols, long, train_overlap = 0) {
   src <- if ("source" %in% names(long) && nrow(long) > 0) {
     long$source[match(value_cols, long$variable)]
   } else {
-    NA_character_
+    rep(NA_character_, length(value_cols))
   }
+
+  manifest <- tryCatch(calib_manifest(store_root, site_id), error = function(e) NULL)
+
+  tier <- vapply(seq_along(value_cols), function(i) {
+    v <- value_cols[[i]]
+    if (isTRUE(met_variable(v)$measurability_class == "model_only")) {
+      return("raw")
+    }
+    s <- src[[i]]
+    if (is.null(manifest) || nrow(manifest) == 0 || is.na(s)) {
+      return("physical")
+    }
+    rows <- manifest[manifest$variable == v & manifest$source == s, , drop = FALSE]
+    if (nrow(rows) == 0) "physical" else rows$tier[[which.max(rows$version)]]
+  }, character(1))
+
   tibble::tibble(
     variable = value_cols,
-    tier = "raw",
+    tier = tier,
     train_overlap = train_overlap,
     source = src
   )
@@ -116,7 +148,7 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
 
   attr(wide$time, "tzone") <- "UTC"
 
-  provenance <- .met_wide_provenance(value_cols, long)
+  provenance <- .met_wide_provenance(site_store_root(s), site_id(s), value_cols, long)
   keys <- list(site_id = site_id(s), from = window$from, to = window$to)
   versions <- list(
     schema_version = .met_wide_schema_version,

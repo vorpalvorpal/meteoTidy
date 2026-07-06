@@ -57,15 +57,17 @@ profile_rescale <- function(raw, height, corrected_10m, raw_10m, stable = FALSE,
   raw * damped_ratio
 }
 
-#' Diagnostic boundary-layer height from corrected surface variables
+#' Diagnostic boundary-layer height (EXPERIMENTAL APPROXIMATION, not AERMET)
 #'
-#' A simple, documented placeholder for an AERMET-style boundary-layer
-#' height recomputed from *corrected* surface temperature and wind, served
-#' **alongside** (never replacing) the raw model BLH. This is a mixing-height
-#' heuristic scaling with near-surface wind shear production and thermal
-#' stability proxy, not a full AERMET scheme (out of this plan's tested
-#' scope) -- documented here as an approximation pending Plan 13 verification
-#' against site truth.
+#' **This is a heuristic approximation, not the AERMET-style scheme SCOPING
+#' section 7.3 describes**, and is explicitly marked as such here rather than
+#' implying a full scheme: a simple mixing-height proxy scaling with
+#' near-surface wind shear production and a thermal stability proxy,
+#' recomputed from *corrected* surface temperature and wind and served
+#' **alongside** (never replacing) the raw model BLH. Off by default
+#' (SCOPING section 7.3's model-only opt-in convention) and not verified
+#' against site truth (Plan 13) -- acceptable for v1 as an off-by-default
+#' diagnostic, but callers must not treat it as a validated BLH scheme.
 #'
 #' @param raw_blh Numeric vector, the raw model boundary-layer height.
 #' @param corrected_surface A list/tibble with `temperature_2m` and

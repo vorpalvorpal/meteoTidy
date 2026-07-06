@@ -39,11 +39,16 @@
   worldmet::import_ghcn_hourly(station = station, year = year)
 }
 
-# worldmet documents no specific "bad" Quality_air_temp code in general
-# public materials, and the frozen tests never exercise a non-ok GHCNh
-# quality value; simplify to always "ok" (belt-and-braces default,
-# documented here as a known simplification -- if worldmet's quality
-# vocabulary is confirmed later, replace this with a real lookup).
+# DECIDED SIMPLIFICATION (post-implementation audit, see IMPLEMENTER_PROMPT.md
+# item 7): Plan 06 says qc_flag should be mapped from worldmet's quality
+# field, but worldmet documents no specific "bad" Quality_air_temp code in
+# general public materials, and no fixture/test exercises a non-ok GHCNh
+# quality value -- there is no confirmed vocabulary to map from yet. Rather
+# than guess a mapping that cannot be verified, this always returns "ok"
+# (belt-and-braces default) until worldmet's quality vocabulary is confirmed,
+# at which point this should become a real lookup keyed on
+# `quality_air_temp` (and a fixture row exercising a non-ok code should be
+# added alongside it).
 .ghcnh_qc_flag <- function(quality_air_temp) {
   rep("ok", length(quality_air_temp))
 }
