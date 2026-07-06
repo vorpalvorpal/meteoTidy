@@ -281,3 +281,34 @@
   serves a simple recomputed boundary-layer height alongside (never
   instead of) the raw model BLH; `radiation_resplit()` passes raw
   direct/diffuse through unchanged (tier `"raw"`) without a pyranometer.
+- Verification engine (internal): `rolling_origin_score()` walks forward
+  through archived `(forecast, observation)` pairs, fitting a calibration
+  only on data strictly before a rolling origin (with a documented buffer)
+  and scoring it only on the window issued after that origin -- the central
+  review fix (never score a calibration on its own training window, which
+  would inflate its reported skill and corrupt Plan 11's promotion gate).
+  Deterministic (`score_deterministic()`: MAE/RMSE) and probabilistic
+  (`score_crps()`, via `scoringRules`, now an `Imports` dependency) scores,
+  a `skill_score()` against a baseline, and per-member cumulative
+  accumulation (`cumulative_by_member()`, so multi-day totals are summed
+  per ensemble member rather than by invalidly summing daily percentiles)
+  round out the scoring primitives. Baselines (`baseline_persistence()`,
+  `baseline_climatology()`, day-of-year windowed) let "correction helps" be
+  judged against climatology, not just the raw model -- climatology can and
+  does beat a low-skill long-lead forecast. Calibration diagnostics
+  (`rank_histogram()`/`histogram_flatness()`, `spread_error_ratio()`,
+  `brier_score()`/`reliability_table()`) catch sharpness/reliability issues
+  CRPS alone conflates. A moving-block bootstrap (`block_bootstrap_ci()`)
+  gives a significance call on score differences that correctly widens
+  (versus a naive i.i.d. bootstrap) on autocorrelated series.
+  `skill_verdict_compute()` -- deliberately not named `skill_verdict()`, to
+  avoid colliding with the identically-named test-helper builder Plans
+  11/12 already depend on -- turns scores and a bootstrap result into the
+  `promote`/`shrink_weight`/`consistency_violation_rate` verdict those
+  plans consume, requiring both a real out-of-sample improvement *and*
+  that improvement surviving the bootstrap before promoting a tier.
+  `verify_run()` assembles pairs (`assemble_verification_pairs()`), scores
+  the raw tier out-of-sample per `(source, variable, lead_bucket)`, and
+  writes a report retrievable via `read_verification_report()`; wiring in
+  Plan 11/12's actual fitted tiers side by side is left to Plan 16's
+  pipeline orchestration.

@@ -32,6 +32,7 @@ Imports:
     readr,
     rlang,
     S7,
+    scoringRules,
     tibble,
     units,
     vctrs,
@@ -46,7 +47,6 @@ Suggests:
     duckdb,
     httptest2,
     lintr,
-    scoringRules,
     terra,
     testthat (>= 3.0.0)
 Collate:
@@ -113,4 +113,10 @@ Collate:
     'units.R'
     'utils.R'
     'vendor-weatherbom.R'
+    'verify-baselines.R'
+    'verify-bootstrap.R'
+    'verify-calibration.R'
+    'verify-scores.R'
+    'verify-verdict.R'
+    'verify.R'
     'wind-uv.R'
