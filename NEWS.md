@@ -312,3 +312,38 @@
   writes a report retrievable via `read_verification_report()`; wiring in
   Plan 11/12's actual fitted tiers side by side is left to Plan 16's
   pipeline orchestration.
+- The stable, public read surface: `met_history()`, `met_record()`,
+  `met_forecast_archive()`, and `met_verification()` are the first exported,
+  versioned tibble-returning functions over the store -- every other verb so
+  far has stayed internal pipeline machinery. Each accepts a single
+  `met_site` or a `met_sites` collection and row-binds across sites, and
+  validates its return value with the Plan 01 canonical helper before
+  returning. `met_forecast_archive(members = TRUE)` (the default) retrieves
+  per-member ensemble trajectories; `met_record(as_of = ...)` reproduces a
+  historical point-in-time view via Plan 03's revision policy. The four
+  signatures are snapshot-guarded (`formals()`) so an accidental breaking
+  change to this contract is caught in review. `met_connect()` exposes the
+  same store over `duckdb`/`arrow` for ad-hoc SQL/dplyr access, documented
+  experimental (only the tibble functions are a stability promise -- this
+  one exposes the raw physical schema, including bookkeeping columns like
+  `superseded`, and may change without a deprecation cycle). Deployment
+  configuration (`read_deployment_config()`, non-secret YAML layered over
+  the Plan 02 per-site registry: store roots, per-source refetch windows,
+  adapter defaults) reuses Plan 02's inline-secret guard so a literal secret
+  value anywhere under `sources` still fails loud. Secrets are resolved by
+  name only, never inlined: `resolve_secret()` reads an env var or (via the
+  optional `keyring` package) a keyring entry at use time and caches
+  nothing; `redact()` hides a secret in any print/format output; and
+  `assert_no_secrets_in()` is a belt-and-braces guard callers can run before
+  any store write to abort loudly if a resolved secret value would
+  otherwise leak into Parquet/manifests/provenance.
+- Fixed two real bugs caught while implementing the read API: `cli::cli_abort()`
+  cannot interpolate a glue expression that starts with a literal dot
+  (`{.deployment_top_level_keys}` was misparsed as a cli inline style, not a
+  variable reference) -- fixed by binding to a plain local name first. And a
+  classic R partial-argument-matching footgun: a mockable bridge function's
+  `site_id` parameter was silently overwritten by an unrelated `site = `
+  argument at the call site, because `"site"` is an unambiguous prefix of
+  `"site_id"` and R's partial matching resolved it there instead of falling
+  through to `...` -- fixed by renaming the parameter to remove the prefix
+  relationship entirely, rather than relying on argument order.

@@ -46,6 +46,7 @@ Suggests:
     DBI,
     duckdb,
     httptest2,
+    keyring,
     lintr,
     terra,
     testthat (>= 3.0.0)
@@ -57,6 +58,8 @@ Collate:
     'bom-parse.R'
     'bom-transport.R'
     'conditions.R'
+    'config.R'
+    'connect.R'
     'consistency-pass.R'
     'correct-physical.R'
     'correct.R'
@@ -81,9 +84,14 @@ Collate:
     'qc-solar.R'
     'qc-spatial.R'
     'qc.R'
+    'verify.R'
+    'store-forecast.R'
+    'store-obs.R'
+    'read-api.R'
     'schema-forecast.R'
     'schema-obs.R'
     'schema.R'
+    'secrets.R'
     'shrinkage.R'
     'silo-disagg.R'
     'silo-qcode.R'
@@ -101,8 +109,6 @@ Collate:
     'station-resolve.R'
     'store-calib.R'
     'store-connect.R'
-    'store-forecast.R'
-    'store-obs.R'
     'store-watermark.R'
     'store.R'
     'tier-emos.R'
@@ -118,5 +124,4 @@ Collate:
     'verify-calibration.R'
     'verify-scores.R'
     'verify-verdict.R'
-    'verify.R'
     'wind-uv.R'
