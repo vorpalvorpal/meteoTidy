@@ -23,7 +23,11 @@ describe("skill-gated manifest bump (end-to-end Plans 11/13)", {
     )
     met_refit(site, now = now, config = pipeline_config(root))
     man_pass <- calib_manifest(root, "test")
-    expect_equal(nrow(man_pass), 1)
+    # Plan 17 item 3: met_refit() iterates every configured source (obs UNION
+    # forecast), not just obs_sources -- pipeline_config()'s default has 3
+    # (site_aws, openmeteo, bom_forecast), so the always-promoting mock
+    # writes one calibration per source.
+    expect_equal(nrow(man_pass), 3)
 
     # FAIL verdict → no new version
     testthat::local_mocked_bindings(

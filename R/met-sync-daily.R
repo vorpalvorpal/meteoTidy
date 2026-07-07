@@ -40,6 +40,10 @@ NULL
         obs <- .acquire_obs(source, site, window, now = now)
         if (nrow(obs) > 0) {
           store_write_obs(store_root, obs, now = now, mode = "supersede")
+          if ("transport" %in% names(obs)) {
+            transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
+            obs_transport_write(store_root, obs[transport_cols], now = now)
+          }
         }
         NULL
       },

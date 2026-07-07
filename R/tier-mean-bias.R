@@ -29,6 +29,17 @@
   tibble::as_tibble(out)
 }
 
+# The seasonal/diurnal bias of a forecast is a property of the time the
+# value is ABOUT (valid time), not when it was issued -- for a daily-lead
+# forecast those differ by the lead, so keying the harmonics on issue_time
+# would fit the diurnal term on the wrong clock (Plan 17 item 7). `df` may be
+# a pairs tibble (has both) or a record-correction newdata frame (issue_time
+# only, since a record correction's "issue" and "valid" instant are the
+# same observation time) -- fall back to issue_time when valid_time is absent.
+.mean_bias_time <- function(df) {
+  if ("valid_time" %in% names(df)) df$valid_time else df$issue_time
+}
+
 # The seasonal-coverage fraction of `time`: the day-of-year span actually
 # observed, relative to a full annual cycle. A full year (or more) gives
 # 1; a single day gives ~1/365.25.
@@ -67,7 +78,10 @@
 #' diurnal cycles.
 #'
 #' @param pairs A `forecast_obs_pairs()`-shaped tibble: `issue_time`,
-#'   `forecast`, `observation` columns (see `tests/testthat/helper-correct.R`).
+#'   `forecast`, `observation` columns (see `tests/testthat/helper-correct.R`),
+#'   and, when available, `valid_time` -- the harmonics are keyed on
+#'   `valid_time` (the time the value is ABOUT), falling back to `issue_time`
+#'   only when `valid_time` is absent.
 #' @param n_harmonics Number of annual (day-of-year) harmonics to fit.
 #'   Default `2`.
 #' @param shrink Whether to shrink the annual-harmonic amplitudes toward
@@ -78,7 +92,7 @@
 #' @keywords internal
 #' @noRd
 fit_mean_bias <- function(pairs, n_harmonics = 2, shrink = TRUE) {
-  time <- pairs$issue_time
+  time <- .mean_bias_time(pairs)
   resid <- pairs$observation - pairs$forecast
   harmonics <- .mean_bias_harmonics(time, n_harmonics)
 
@@ -106,17 +120,19 @@ fit_mean_bias <- function(pairs, n_harmonics = 2, shrink = TRUE) {
 #' Apply a fitted mean-bias calibration
 #'
 #' Evaluates the harmonic fit from `fit_mean_bias()` at each row's
-#' `issue_time` and returns `newdata` with a `value` column: the corrected
-#' forecast (`forecast + predicted_bias`).
+#' `valid_time` (falling back to `issue_time` when absent) and returns
+#' `newdata` with a `value` column: the corrected forecast
+#' (`forecast + predicted_bias`).
 #'
 #' @param coeffs A coefficients tibble from `fit_mean_bias()`.
-#' @param newdata A tibble with `issue_time` and `forecast` columns.
+#' @param newdata A tibble with `forecast` and, ideally, `valid_time`
+#'   columns (`issue_time` as a fallback).
 #' @return `newdata` with a `value` column added (the corrected forecast).
 #' @keywords internal
 #' @noRd
 apply_mean_bias <- function(coeffs, newdata) {
   n_harmonics <- coeffs$n_harmonics[[1]]
-  harmonics <- .mean_bias_harmonics(newdata$issue_time, n_harmonics)
+  harmonics <- .mean_bias_harmonics(.mean_bias_time(newdata), n_harmonics)
 
   intercept <- if ("(Intercept)" %in% names(coeffs)) coeffs[["(Intercept)"]][[1]] else 0
   pred_bias <- rep(intercept, nrow(harmonics))

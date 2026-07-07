@@ -23,10 +23,10 @@ are returned; \code{NULL} (default) returns every variable present.}
 
 \item{from, to}{Optional UTC POSIXct bounds.}
 
-\item{as_of}{Optional UTC POSIXct point-in-time read. Accepted for
-interface symmetry with \code{\link[=met_record]{met_record()}}; the underlying curated-product
-builders (Plan 10) have no revision concept yet, so this currently has
-no effect (a documented gap, not silently ignored data corruption).}
+\item{as_of}{Optional UTC POSIXct point-in-time read: reproduces the
+curated history the store would have produced at that point in time
+(Plan 03's revision policy, threaded through to the underlying
+\code{store_read_obs()} call the curated-product builders make).}
 }
 \value{
 A canonical long observation tibble (see \code{new_obs()}).

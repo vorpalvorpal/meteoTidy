@@ -2,7 +2,6 @@
 
 describe("item 4: correction ends with the physical-consistency pass", {
   it("clips gusts below mean wind and counts the violation", {
-    skip("plan 17 item 4: wire consistency_pass into correct_forecast — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)

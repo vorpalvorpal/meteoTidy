@@ -5,7 +5,6 @@
 
 describe("item 11: met_sync_live QCs and fills once, not once per obs source", {
   it("invokes qc_run a single time per site regardless of obs-source count", {
-    skip("plan 17 item 11: hoist qc_run/fill_run — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -39,8 +38,6 @@ describe("item 11: met_sync_live QCs and fills once, not once per obs source", {
 
 describe("item 12: vectorised aggregation is output-equivalent", {
   it("aggregates each (site, variable, bucket) to the same value as before", {
-    skip("plan 17 item 12: vectorise aggregators — un-skip after refactoring")
-
     # Two sites, one hour, six 10-minute temperature samples each.
     mk <- function(sid, base) {
       times <- as.POSIXct("2026-01-01 00:00", tz = "UTC") + (0:5) * 600
@@ -60,8 +57,6 @@ describe("item 12: vectorised aggregation is output-equivalent", {
 
 describe("item 13: a failed bind_rows does not poison the next met_table combine", {
   it("keeps the class and stays silent on a clean combine after a leaked flag", {
-    skip("plan 17 item 13: reset downgrade_pending defensively — un-skip when implementing")
-
     mk <- function() {
       wide <- tibble::tibble(time = as.POSIXct("2026-01-01", tz = "UTC"),
                              temperature_2m = 20)

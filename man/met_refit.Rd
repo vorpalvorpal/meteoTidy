@@ -19,11 +19,11 @@ met_refit(sites, now = .now(), config)
 A tibble with columns \code{site_id}, \code{status}, \code{message}.
 }
 \description{
-Per site (SCOPING section 9): calls \code{correct_refit()} once per
-configured observation source (\code{config$obs_sources}) to fit/refit
-candidate calibration tiers and bump the calibration manifest \strong{only}
-when Plan 13's skill gate passes (\code{correct_refit()} itself performs the
-verdict-gated \code{calib_write()}); runs \code{verify_run()} over
+Per site (SCOPING section 9): calls \code{correct_refit()} once per configured
+source (\code{config$obs_sources} union \code{config$forecast_sources}, Plan 17
+item 3) to fit/refit candidate calibration tiers and bump the calibration
+manifest \strong{only} when Plan 13's skill gate passes (\code{correct_refit()}
+itself performs the verdict-gated \code{calib_write()}); runs \code{verify_run()} over
 \code{config$forecast_sources} for the verification report; and compacts the
 store's Parquet partitions (\code{store_compact()}, Plan 03).
 }

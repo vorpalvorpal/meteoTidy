@@ -182,6 +182,12 @@ dplyr_row_slice.met_table <- function(data, i, ...) {
 
 #' @exportS3Method vctrs::vec_ptype2
 vec_ptype2.met_table.met_table <- function(x, y, ...) {
+  # Clear any stale TRUE left by a prior combine that set the flag here but
+  # then errored before the matching dplyr_reconstruct.met_table() call
+  # could read (and clear) it -- otherwise that leak silently downgrades
+  # this, unrelated, comparison's result.
+  .met_table_state$downgrade_pending <- FALSE
+
   px <- met_provenance(x)
   py <- met_provenance(y)
   shared <- intersect(px$variable, py$variable)

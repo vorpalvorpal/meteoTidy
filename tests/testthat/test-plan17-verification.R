@@ -30,7 +30,6 @@ seed_verification_store <- function(root, fc_source = "openmeteo") {
 
 describe("item 5: verify_run scores against baselines, not just before/after", {
   it("emits raw, persistence, and climatology report rows", {
-    skip("plan 17 item 5: baselines in verify_run — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -46,7 +45,6 @@ describe("item 5: verify_run scores against baselines, not just before/after", {
   })
 
   it("writes ensemble calibration diagnostics for a member-carrying source", {
-    skip("plan 17 item 5: rank/spread/Brier diagnostics — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -79,7 +77,6 @@ describe("item 5: verify_run scores against baselines, not just before/after", {
 
 describe("item 1b: serve_shrink_weight from verified per-lead skill", {
   it("falls back to a tier-based weight before any report exists", {
-    skip("plan 17 item 1b: serve_shrink_weight fallback — un-skip when implementing")
 
     root <- local_store()
     # No verification report yet: a fitted tier is trusted (weight 1); a raw /

@@ -9,11 +9,23 @@
   file.path(store_root, "verification", paste0("site_id=", site_id))
 }
 
+.verification_diagnostics_dir <- function(store_root, site_id) {
+  file.path(store_root, "verification_diagnostics", paste0("site_id=", site_id))
+}
+
 .verification_report_empty <- function() {
   tibble::tibble(
     site_id = character(0), source = character(0), variable = character(0),
     lead_bucket = character(0), tier = character(0),
     n_pairs = integer(0), mae = double(0), rmse = double(0)
+  )
+}
+
+.verification_diagnostics_empty <- function() {
+  tibble::tibble(
+    site_id = character(0), source = character(0), variable = character(0),
+    lead_bucket = character(0), n_members = integer(0), n_cases = integer(0),
+    histogram_flatness = double(0), spread_error_ratio = double(0), brier_score = double(0)
   )
 }
 
@@ -191,17 +203,160 @@ rolling_origin_score <- function(pairs, fit_fn, apply_fn, step, buffer) {
   list(mae = scores$mae, rmse = scores$rmse, n_scored = length(corrected_all))
 }
 
+# The baselines/tier methods scored per group in verify_run() (Plan 17 item
+# 5, SCOPING section 7.4): every method is scored out-of-sample the same way
+# (rolling_origin_score()'s fit_fn/apply_fn contract), so "raw"/"persistence"/
+# "climatology" are just three more fit_fn/apply_fn pairs alongside the
+# fitted-tier one, not a special case.
+#
+# `climatology_apply` closes over `hist` (`build_history_daily()`, built ONCE
+# per group by the caller, not once per rolling-origin window -- expensive to
+# recompute and does not depend on the training window at all, unlike a real
+# fit) and `variable`.
+.verify_baseline_methods <- function(hist, variable) {
+  list(
+    raw = list(fit = .verify_identity_fit, apply = .verify_identity_apply),
+    persistence = list(
+      fit = function(train) NULL,
+      apply = function(fit, score_set) baseline_persistence(score_set$observation)
+    ),
+    climatology = list(
+      fit = function(train) NULL,
+      apply = function(fit, score_set) {
+        vapply(seq_len(nrow(score_set)), function(j) {
+          if (nrow(hist) == 0) {
+            return(NA_real_)
+          }
+          baseline_climatology(hist, score_set$valid_time[[j]], variable)$mean
+        }, numeric(1))
+      }
+    )
+  )
+}
+
+# Score one (source, variable, lead_bucket) group's `sub` pairs against every
+# baseline method plus, when a calibration is on file for (variable, source),
+# the incumbent fitted tier -- one report row per method (Plan 17 item 5).
+.verify_score_group <- function(store_root, site, sid, grp, sub) {
+  window <- list(from = min(sub$valid_time) - as.difftime(1095, units = "days"),
+                 to = max(sub$valid_time))
+  hist <- build_history_daily(store_root, site, window)
+  methods <- .verify_baseline_methods(hist, grp$variable)
+
+  calib <- tryCatch(calib_read(store_root, sid, grp$variable, grp$source, version = "current"),
+                    error = function(e) NULL)
+  if (!is.null(calib)) {
+    tier <- calib$manifest$tier[[1]]
+    methods[[tier]] <- .correct_refit_fit_apply(tier)
+  }
+
+  rows <- lapply(names(methods), function(m) {
+    ro <- rolling_origin_score(sub, fit_fn = methods[[m]]$fit, apply_fn = methods[[m]]$apply,
+                               step = "30 days", buffer = "1 day")
+    tibble::tibble(
+      site_id = sid, source = grp$source, variable = grp$variable,
+      lead_bucket = grp$lead_bucket, tier = m,
+      n_pairs = ro$n_scored, mae = ro$mae, rmse = ro$rmse
+    )
+  })
+  vctrs::vec_rbind(!!!rows)
+}
+
+.verify_report <- function(store_root, site, sid, sources) {
+  pairs <- assemble_verification_pairs(store_root, site, sources)
+  if (nrow(pairs) == 0) {
+    return(.verification_report_empty())
+  }
+
+  pairs$lead_bucket <- .verify_lead_bucket(pairs$lead_time)
+  groups <- unique(pairs[c("source", "variable", "lead_bucket")])
+
+  rows <- lapply(seq_len(nrow(groups)), function(i) {
+    grp <- groups[i, ]
+    sub <- pairs[pairs$source == grp$source & pairs$variable == grp$variable &
+                   pairs$lead_bucket == grp$lead_bucket, , drop = FALSE]
+    .verify_score_group(store_root, site, sid, grp, sub)
+  })
+  vctrs::vec_rbind(!!!rows)
+}
+
+# Ensemble calibration diagnostics (Plan 17 item 5, SCOPING section 7.4):
+# rank/PIT histogram flatness, spread-error ratio, and (for precipitation)
+# Brier score, per (source, variable, lead_bucket) group that has archived
+# member rows. Reads the forecast archive directly (not `assemble_verifi-
+# cation_pairs()`, which drops member rows entirely) and pivots to one
+# ensemble-matrix row per `valid_time`, matched against the site's QC-clean
+# observation at that instant.
+.verify_diagnostics <- function(store_root, site, sources, sid) {
+  fc <- store_read_forecast(store_root, sid, source = sources, members = TRUE)
+  fc <- fc[!is.na(fc$member), , drop = FALSE]
+  if (nrow(fc) == 0) {
+    return(.verification_diagnostics_empty())
+  }
+
+  fc$lead_bucket <- .verify_lead_bucket(fc$lead_time)
+  groups <- unique(fc[c("source", "variable", "lead_bucket")])
+
+  rows <- lapply(seq_len(nrow(groups)), function(i) {
+    grp <- groups[i, ]
+    sub <- fc[fc$source == grp$source & fc$variable == grp$variable &
+                fc$lead_bucket == grp$lead_bucket, , drop = FALSE]
+
+    obs <- store_read_obs(store_root, sid, variables = grp$variable)
+    obs <- obs[obs$qc_flag == "ok", , drop = FALSE]
+    if (nrow(obs) == 0) {
+      return(NULL)
+    }
+
+    valid_times <- sort(unique(sub$valid_time))
+    members <- sort(unique(sub$member))
+    mat <- matrix(NA_real_, nrow = length(valid_times), ncol = length(members))
+    for (mi in seq_along(members)) {
+      msub <- sub[sub$member == members[[mi]], , drop = FALSE]
+      mat[, mi] <- msub$value[match(valid_times, msub$valid_time)]
+    }
+    truth <- obs$value[match(valid_times, obs$datetime_utc)]
+
+    complete <- stats::complete.cases(mat) & !is.na(truth)
+    mat <- mat[complete, , drop = FALSE]
+    truth <- truth[complete]
+    if (nrow(mat) == 0 || ncol(mat) < 2) {
+      return(NULL)
+    }
+
+    brier <- NA_real_
+    if (identical(grp$variable, "precipitation")) {
+      brier <- brier_score(rowMeans(mat > 0), as.numeric(truth > 0))
+    }
+
+    tibble::tibble(
+      site_id = sid, source = grp$source, variable = grp$variable,
+      lead_bucket = grp$lead_bucket, n_members = ncol(mat), n_cases = nrow(mat),
+      histogram_flatness = histogram_flatness(rank_histogram(mat, truth)),
+      spread_error_ratio = spread_error_ratio(mat, truth), brier_score = brier
+    )
+  })
+  rows <- Filter(Negate(is.null), rows)
+  if (length(rows) == 0) {
+    return(.verification_diagnostics_empty())
+  }
+  vctrs::vec_rbind(!!!rows)
+}
+
 #' Run the verification engine and persist a report
 #'
-#' Assembles verification pairs (`assemble_verification_pairs()`), scores the
-#' raw (uncorrected) forecast out-of-sample via `rolling_origin_score()` per
-#' `(source, variable, lead_bucket)`, and writes the resulting report to the
-#' store (`read_verification_report()` reads it back). This plan's tested
-#' scope is the rolling-origin correctness property and report persistence;
-#' wiring in Plan 11/12's actual fitted calibrations (so the report compares
-#' `raw` against `physical`/`mean_bias`/`qmap`/`emos` tiers side by side) is
-#' Plan 16's pipeline-orchestration concern -- every reported row here is
-#' honestly tier `"raw"` until that wiring exists.
+#' Assembles verification pairs (`assemble_verification_pairs()`) and, per
+#' `(source, variable, lead_bucket)` group, scores every applicable method
+#' out-of-sample via `rolling_origin_score()` (SCOPING section 7.4): the raw
+#' (uncorrected) forecast, the persistence baseline (`baseline_persistence()`),
+#' the climatology baseline (`baseline_climatology()` over
+#' `build_history_daily()`), and, when a calibration is on file for
+#' `(variable, source)`, the incumbent fitted tier -- one report row per
+#' method, all scored out-of-sample, never merely before/after. Also writes a
+#' companion `verification_diagnostics` dataset (rank/PIT histogram flatness,
+#' spread-error ratio, and Brier score for precipitation) for any group with
+#' archived ensemble member rows (`read_verification_diagnostics()` reads it
+#' back).
 #'
 #' @param store_root Root directory of the store.
 #' @param site A [met_site()] object.
@@ -212,37 +367,17 @@ rolling_origin_score <- function(pairs, fit_fn, apply_fn, step, buffer) {
 #' @noRd
 verify_run <- function(store_root, site, sources, now = .now()) {
   sid <- site_id(site)
-  pairs <- assemble_verification_pairs(store_root, site, sources)
 
-  if (nrow(pairs) == 0) {
-    report <- .verification_report_empty()
-    .atomic_rewrite_partition(.verification_dir(store_root, sid), report)
-    return(invisible(report))
-  }
-
-  pairs$lead_bucket <- .verify_lead_bucket(pairs$lead_time)
-  groups <- unique(pairs[c("source", "variable", "lead_bucket")])
-
-  rows <- lapply(seq_len(nrow(groups)), function(i) {
-    grp <- groups[i, ]
-    sub <- pairs[pairs$source == grp$source & pairs$variable == grp$variable &
-                   pairs$lead_bucket == grp$lead_bucket, , drop = FALSE]
-    ro <- rolling_origin_score(sub, fit_fn = .verify_identity_fit,
-                               apply_fn = .verify_identity_apply,
-                               step = "30 days", buffer = "1 day")
-    tibble::tibble(
-      site_id = sid, source = grp$source, variable = grp$variable,
-      lead_bucket = grp$lead_bucket, tier = "raw",
-      n_pairs = ro$n_scored, mae = ro$mae, rmse = ro$rmse
-    )
-  })
-
-  report <- vctrs::vec_rbind(!!!rows)
+  report <- .verify_report(store_root, site, sid, sources)
   # REPLACE the stored report rather than appending a new part-file:
   # read_verification_report() rbinds every part-file in the directory, so an
   # append here would duplicate rows on every met_refit() run -- the report
   # is a "current state" product, not an accumulating log.
   .atomic_rewrite_partition(.verification_dir(store_root, sid), report)
+
+  diagnostics <- .verify_diagnostics(store_root, site, sources, sid)
+  .atomic_rewrite_partition(.verification_diagnostics_dir(store_root, sid), diagnostics)
+
   invisible(report)
 }
 
@@ -262,6 +397,26 @@ read_verification_report <- function(store_root, site_id) {
   files <- list.files(dir, pattern = "\\.parquet$", full.names = TRUE)
   if (length(files) == 0) {
     return(.verification_report_empty())
+  }
+  tibble::as_tibble(do.call(rbind, lapply(files, arrow::read_parquet)))
+}
+
+#' Read a site's stored verification diagnostics
+#'
+#' @param store_root Root directory of the store.
+#' @param site_id Site identifier.
+#' @return A tibble (see `verify_run()`); zero rows (typed) if no diagnostics
+#'   have been written yet.
+#' @keywords internal
+#' @noRd
+read_verification_diagnostics <- function(store_root, site_id) {
+  dir <- .verification_diagnostics_dir(store_root, site_id)
+  if (!dir.exists(dir)) {
+    return(.verification_diagnostics_empty())
+  }
+  files <- list.files(dir, pattern = "\\.parquet$", full.names = TRUE)
+  if (length(files) == 0) {
+    return(.verification_diagnostics_empty())
   }
   tibble::as_tibble(do.call(rbind, lapply(files, arrow::read_parquet)))
 }

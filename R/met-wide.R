@@ -1,4 +1,4 @@
-#' @include met-table.R met-table-hash.R read-api.R
+#' @include met-table.R met-table-hash.R read-api.R correct-forecast.R
 NULL
 
 # Plan 15 -- the one-call meteoHazard interface (SCOPING section 10): the
@@ -102,20 +102,21 @@ NULL
 }
 
 # Build `met_wide()`'s output provenance, with a real per-variable
-# correction tier (post-implementation audit, see IMPLEMENTER_PROMPT.md item
-# 6: "once item 1 lands, thread the real per-variable correction tier
-# through"). Item 1 (R/correct.R's correct_refit()) is what makes
-# calib_manifest() an honest source of truth for "what tier is this
-# (variable, source) actually calibrated at", so this looks each value
-# column's *current* manifest tier up there instead of hardcoding `"raw"`:
+# correction tier. Plan 17 item 1: `long` (for `kind = "forecast"`) has
+# already been through `correct_forecast()`, which stamps a per-row `tier`
+# column recording what was actually APPLIED -- that is the honest source of
+# truth here, not a fresh manifest re-derivation (which only records what
+# tier the manifest *claims*, and previously could disagree with what a
+# consumer actually received). `kind = "record"` has no such `tier` column
+# (`met_record()` is not itself serve-time corrected by this plan), so it
+# keeps the manifest-lookup fallback:
 #
 #  - model-only variables (SCOPING section 7.3) have no site truth to
 #    correct against and are always `"raw"`;
 #  - a variable with no calibration on file yet is `"physical"` (the day-0
-#    default `correct_apply()` itself falls back to);
-#  - otherwise, the highest-version manifest row's `tier` for
-#    `(variable, source)`, where `source` is the value column's own source
-#    (from the underlying long table, same lookup this function always did).
+#    default `correct_apply()`/`correct_forecast()` itself falls back to);
+#  - otherwise, `long$tier` when present (the applied tier), else the
+#    highest-version manifest row's `tier` for `(variable, source)`.
 .met_wide_provenance <- function(store_root, site_id, value_cols, long) {
   src <- if ("source" %in% names(long) && nrow(long) > 0) {
     long$source[match(value_cols, long$variable)]
@@ -124,6 +125,7 @@ NULL
   }
 
   manifest <- tryCatch(calib_manifest(store_root, site_id), error = function(e) NULL)
+  has_applied_tier <- "tier" %in% names(long) && nrow(long) > 0
 
   tier <- character(length(value_cols))
   train_overlap <- numeric(length(value_cols))
@@ -134,17 +136,23 @@ NULL
       tier[[i]] <- "raw"
       next
     }
+
+    if (has_applied_tier) {
+      applied <- long$tier[long$variable == v]
+      tier[[i]] <- if (length(applied) == 0) "physical" else applied[[1]]
+    }
+
     rows <- if (is.null(manifest) || nrow(manifest) == 0 || is.na(s)) {
       NULL
     } else {
       manifest[manifest$variable == v & manifest$source == s, , drop = FALSE]
     }
     if (is.null(rows) || nrow(rows) == 0) {
-      tier[[i]] <- "physical"
+      if (!has_applied_tier) tier[[i]] <- "physical"
       next
     }
     current <- rows[which.max(rows$version), , drop = FALSE]
-    tier[[i]] <- current$tier[[1]]
+    if (!has_applied_tier) tier[[i]] <- current$tier[[1]]
     # SCOPING section 3.2: provenance carries the training-overlap length.
     # The manifest records the fit's training window; report it in hours.
     train_overlap[[i]] <- as.numeric(difftime(current$train_end[[1]],
@@ -219,6 +227,7 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   } else {
     long <- met_forecast_archive(site, valid_from = window$from, valid_to = window$to)
     long <- .latest_issuance(long)
+    long <- correct_forecast(site_store_root(s), s, long, now = now)
     wide <- .widen_forecast(long, variables = value_cols)
     names(wide)[names(wide) == "valid_time"] <- "time"
   }

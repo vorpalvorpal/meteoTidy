@@ -23,7 +23,6 @@ seed_pairs_into_store <- function(root, pairs, fc_source = "openmeteo") {
 
 describe("item 3: met_refit fits calibrations for forecast sources", {
   it("writes a calibration for an archived forecast source", {
-    skip("plan 17 item 3: iterate forecast_sources in met_refit — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -43,7 +42,6 @@ describe("item 3: met_refit fits calibrations for forecast sources", {
 
 describe("item 6: promotion must beat the fitted incumbent, not merely raw", {
   it("does not advance the version when the candidate cannot beat the incumbent", {
-    skip("plan 17 item 6: compare against the fitted incumbent — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)

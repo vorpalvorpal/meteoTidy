@@ -3,8 +3,6 @@
 
 describe("item 10: day-0 lapse uses a grid-vs-site elevation delta", {
   it("adjusts temperature by the standard lapse rate when a grid elevation is given", {
-    skip("plan 17 item 10: grid_elevation-driven lapse — un-skip when implementing")
-
     site <- make_test_site()   # elevation 220 m
     obs <- new_obs(make_obs(n = 1, variable = "temperature_2m", value = 20))
 
@@ -15,8 +13,6 @@ describe("item 10: day-0 lapse uses a grid-vs-site elevation delta", {
   })
 
   it("is a no-op (but still tier physical) when no grid elevation is supplied", {
-    skip("plan 17 item 10: NULL grid_elevation no-op — un-skip when implementing")
-
     site <- make_test_site()
     obs <- new_obs(make_obs(n = 1, variable = "temperature_2m", value = 20))
     out <- correct_physical(obs, site, grid_elevation = NULL)

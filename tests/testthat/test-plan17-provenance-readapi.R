@@ -3,8 +3,6 @@
 
 describe("item 8: the serving transport is recorded in provenance", {
   it("round-trips an obs_transport row keyed like the observation", {
-    skip("plan 17 item 8: obs_transport companion table — un-skip when implementing")
-
     root <- local_store()
     df <- tibble::tibble(
       site_id = "test",
@@ -23,7 +21,6 @@ describe("item 8: the serving transport is recorded in provenance", {
 
 describe("item 9: met_history honours a point-in-time as_of read", {
   it("returns the pre-revision value when as_of predates the revision", {
-    skip("plan 17 item 9: thread as_of through history builders — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)

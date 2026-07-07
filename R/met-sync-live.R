@@ -1,16 +1,27 @@
-#' @include pipeline.R archive-forecasts.R qc.R fill.R correct.R store-watermark.R
+#' @include pipeline.R archive-forecasts.R qc.R fill.R store-watermark.R
 NULL
 
 # Plan 16 -- met_sync_live(): the hourly, best-effort near-real-time sync
 # (SCOPING section 9/5.1). Per site: fetch the live obs head from each
 # configured obs source (GHCNh deliberately excluded -- its ~1-week lag,
 # Plan 06 cadence metadata -- makes it unsuitable for a live window), QC +
-# fill just that window, apply current calibrations, archive current
-# forecast issuances, and advance the live watermark. A dead acquisition
-# source degrades that site to status "degraded" rather than crashing the
-# run or the other sites (for_each_site()'s own "isolate" mode is reserved
-# for genuine bugs in the per-site function, not this expected failure mode
-# -- see R/pipeline.R).
+# fill once over the whole window, archive current forecast issuances, and
+# advance the live watermark. A dead acquisition source degrades that site to
+# status "degraded" rather than crashing the run or the other sites
+# (for_each_site()'s own "isolate" mode is reserved for genuine bugs in the
+# per-site function, not this expected failure mode -- see R/pipeline.R).
+#
+# Plan 17 item 1c: correction is applied at SERVE time (met_wide(),
+# R/correct-forecast.R), never here. The `correct_apply()` calls this
+# function used to make (both the obs `target = "record"` call inside the
+# per-source loop and the forecast `target = "forecast"` loop below) computed
+# a result that nothing downstream ever read -- live sync's job is to
+# acquire, QC, fill, and archive; a consumer reading `met_wide()`/
+# `build_history_daily()` gets the CURRENT calibration applied fresh, so a
+# monthly refit takes effect immediately rather than waiting for the next
+# sync to re-apply a stale one. See plans/17-correction-serve-wiring.md's
+# "target architecture" note for the full rationale (a flagged deviation
+# from SCOPING section 9, which lists "apply calibrations" as live-sync work).
 
 # How far back of `now` the "live window" reaches. Not pinned by any test to
 # an exact duration; a few hours is enough to comfortably re-poll the most
@@ -34,6 +45,10 @@ NULL
         obs <- .acquire_obs(source, site, window, now = now)
         if (nrow(obs) > 0) {
           store_write_obs(store_root, obs, now = now, mode = "supersede")
+          if ("transport" %in% names(obs)) {
+            transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
+            obs_transport_write(store_root, obs[transport_cols], now = now)
+          }
         }
         NULL
       },
@@ -42,27 +57,16 @@ NULL
     if (!is.null(result)) {
       degraded <- TRUE
       messages <- c(messages, sprintf("%s: %s", source, conditionMessage(result)))
-      next
     }
-
-    qc_run(store_root, site, variables = NULL, now = now)
-    fill_run(store_root, site, variables = NULL, now = now)
-    correct_apply(store_root, site, source = source, target = "record",
-                  variables = adapters_for_site(site)[[source]]@provides, now = now)
   }
 
-  # Apply current calibrations to the forecast head too (SCOPING section 9:
-  # "apply current calibrations ... target = 'forecast' for the forecast
-  # head"). Best-effort: a forecast-correction failure does not itself
-  # degrade the site beyond whatever the obs loop already found, since the
-  # obs head is the load-bearing near-real-time product.
-  for (source in config$forecast_sources) {
-    rlang::try_fetch(
-      correct_apply(store_root, site, source = source, target = "forecast",
-                    variables = adapters_for_site(site)[[source]]@provides, now = now),
-      error = function(cnd) NULL
-    )
-  }
+  # Hoisted out of the per-source loop (Plan 17 item 11): QC/fill see the
+  # same fully-written window whether run once here or once per source
+  # inside the loop, so running them N times for N obs sources was purely
+  # redundant work -- met_sync_daily() already runs them once, after its
+  # own obs loop; this matches that shape.
+  qc_run(store_root, site, variables = NULL, now = now)
+  fill_run(store_root, site, variables = NULL, now = now)
 
   archive_forecasts(store_root, site, config$forecast_sources, now = now)
   store_set_watermark(store_root, site_id(site), "observations", "live", now)
@@ -77,11 +81,12 @@ NULL
 #'
 #' Hourly, best-effort (SCOPING section 5.1). Per site: fetches each
 #' configured obs source over a short live window, runs `qc_run()`/
-#' `fill_run()` over that window, applies current calibrations
-#' (`correct_apply()`, `target = "record"` for observations and
-#' `target = "forecast"` for the forecast head), archives current forecast
+#' `fill_run()` once over the whole window, archives current forecast
 #' issuances (`archive_forecasts()`), and advances the live watermark
-#' (`"observations"`/`"live"`).
+#' (`"observations"`/`"live"`). Correction is applied at SERVE time, not
+#' here (Plan 17: `met_wide()`/`build_history_daily()` apply the current
+#' calibration fresh on every read; see `R/correct-forecast.R` and
+#' `plans/17-correction-serve-wiring.md`'s "target architecture" note).
 #'
 #' GHCNh is never fetched here: its ~1-week lag (Plan 06 cadence metadata)
 #' makes it unsuitable for a live head; it participates in

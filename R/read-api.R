@@ -18,11 +18,11 @@ NULL
 # exercise `met_history()`'s own row-binding/validation logic without
 # needing a populated store.
 #
-# `as_of` is not threaded through: Plan 10's curated-product builders have
-# no revision/point-in-time concept (unlike `store_read_obs()`), so
-# `met_history(as_of = ...)` is accepted for interface symmetry with
-# `met_record()` but currently has no effect on this path -- a documented
-# gap, not a silent bug.
+# `as_of` is threaded straight into both builders (Plan 17 item 9), which
+# thread it on into their own single `store_read_obs()` call -- the
+# aggregation/compositing each builder does is a pure function of the rows
+# read, so a point-in-time read of the store reproduces the point-in-time
+# product with no other change needed.
 #
 # The site object argument is named `met_site_obj`, NOT `site`: R's partial
 # argument matching would otherwise treat a caller's `site = ` as an
@@ -30,16 +30,16 @@ NULL
 # during development -- `site = s` silently overwrote `site_id` with the
 # whole `met_site` object instead of falling through to `...`).
 store_read_history <- function(store_root, site_id, resolution = c("daily", "hourly"),
-                               met_site_obj, from = NULL, to = NULL, ...) {
+                               met_site_obj, from = NULL, to = NULL, as_of = NULL, ...) {
   resolution <- rlang::arg_match(resolution)
   window <- list(
     from = from %||% as.POSIXct("1970-01-01", tz = "UTC"),
     to = to %||% .now()
   )
   if (resolution == "daily") {
-    build_history_daily(store_root, met_site_obj, window)
+    build_history_daily(store_root, met_site_obj, window, as_of = as_of)
   } else {
-    build_history_hourly(store_root, met_site_obj, window)
+    build_history_hourly(store_root, met_site_obj, window, as_of = as_of)
   }
 }
 
@@ -55,10 +55,10 @@ store_read_history <- function(store_root, site_id, resolution = c("daily", "hou
 #' @param variables Optional character vector to restrict which variables
 #'   are returned; `NULL` (default) returns every variable present.
 #' @param from,to Optional UTC POSIXct bounds.
-#' @param as_of Optional UTC POSIXct point-in-time read. Accepted for
-#'   interface symmetry with [met_record()]; the underlying curated-product
-#'   builders (Plan 10) have no revision concept yet, so this currently has
-#'   no effect (a documented gap, not silently ignored data corruption).
+#' @param as_of Optional UTC POSIXct point-in-time read: reproduces the
+#'   curated history the store would have produced at that point in time
+#'   (Plan 03's revision policy, threaded through to the underlying
+#'   `store_read_obs()` call the curated-product builders make).
 #' @return A canonical long observation tibble (see `new_obs()`).
 #' @family read-api
 #' @export

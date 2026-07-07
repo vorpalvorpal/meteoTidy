@@ -451,3 +451,29 @@
   on `source_ecmwf()` now falls back to it automatically (via `grib_ls`'s
   built-in nearest-gridpoint query) when GDAL's own decode fails and
   eccodes is available, rather than always aborting `grib_ccsds_unsupported`.
+- Post-implementation review fixes (Plan 17): fitted-tier corrections were
+  computed but never served -- `met_wide(kind = "forecast")` now applies the
+  site's current calibration at SERVE time (`correct_forecast()`, shrunk
+  toward climatology per lead bucket with a verified skill weight) and
+  reports the tier that was actually applied, not merely the tier the
+  manifest claims; `build_history_daily()` now site-corrects the SILO leg
+  against the current `(variable, "silo")` calibration and records the
+  correction tier in provenance; `met_refit()` fits calibrations for
+  forecast sources too (previously only observation sources were iterated,
+  so no forecast-source calibration was ever fit in production); a
+  candidate refit must now beat the currently-fitted incumbent, not merely
+  raw, to be promoted. The verification report now scores raw, persistence,
+  and climatology baselines (not just before/after) alongside any fitted
+  tier, all out-of-sample, and a companion `verification_diagnostics`
+  dataset carries rank-histogram flatness, spread-error ratio, and Brier
+  score for ensemble sources (`read_verification_diagnostics()`). Every
+  correction application ends with a physical-consistency pass that clips
+  cross-variable impossibilities and counts the violations. Mean-bias
+  harmonics are now keyed on the value's own (valid) time rather than issue
+  time, fixing a phase mismatch that grew with lead. `met_history(as_of =)`
+  now actually reproduces the store as it was at that point in time. The
+  BOM serving transport (`ftp_feeds`/`web_api`) is now recorded in
+  provenance (`obs_transport_write()`/`obs_transport_read()`). Correction is
+  applied at serve time rather than materialised into the store -- a
+  flagged deviation from the original SCOPING section 9 design, recorded in
+  `plans/17-correction-serve-wiring.md` and `met_sync_live()`'s roxygen.

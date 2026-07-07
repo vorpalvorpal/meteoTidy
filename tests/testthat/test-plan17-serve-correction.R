@@ -6,7 +6,6 @@
 
 describe("item 1: met_wide(kind='forecast') applies the current calibration", {
   it("serves corrected values and truthful provenance tiers", {
-    skip("plan 17 item 1: correct_forecast() + met_wide honesty — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -50,7 +49,6 @@ describe("item 1: met_wide(kind='forecast') applies the current calibration", {
   })
 
   it("leaves values untouched when no calibration exists (tier physical)", {
-    skip("plan 17 item 1: correct_forecast() no-calib path — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -69,7 +67,6 @@ describe("item 1: met_wide(kind='forecast') applies the current calibration", {
 
 describe("item 1c: met_sync_live no longer computes-and-discards corrections", {
   it("does not call correct_apply inside the live sync", {
-    skip("plan 17 item 1c: remove dead correct_apply calls — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -89,7 +86,6 @@ describe("item 1c: met_sync_live no longer computes-and-discards corrections", {
 
 describe("item 7: mean-bias harmonics track the value's own (valid) time", {
   it("recovers and removes a bias that is a function of valid hour-of-day", {
-    skip("plan 17 item 7: key harmonics on valid_time — un-skip when implementing")
 
     withr::local_seed(1)
     d <- 0:239

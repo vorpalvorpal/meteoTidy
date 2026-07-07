@@ -2,7 +2,6 @@
 
 describe("item 2: build_history_daily site-corrects the SILO leg", {
   it("applies the (variable, silo) calibration to SILO-served days", {
-    skip("plan 17 item 2: SILO daily QM in history_daily — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -28,7 +27,6 @@ describe("item 2: build_history_daily site-corrects the SILO leg", {
   })
 
   it("keeps a QC-clean AWS-served day as raw measured truth (tier raw)", {
-    skip("plan 17 item 2: AWS leg is raw truth — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)
@@ -47,7 +45,6 @@ describe("item 2: build_history_daily site-corrects the SILO leg", {
   })
 
   it("leaves the SILO leg unchanged when no calibration exists", {
-    skip("plan 17 item 2: no-calib SILO stays raw — un-skip when implementing")
 
     root <- local_store()
     site <- make_test_site(store_root = root)

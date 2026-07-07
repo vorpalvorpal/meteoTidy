@@ -22,11 +22,12 @@ A tibble with columns \code{site_id}, \code{status} (\code{"ok"} or
 \description{
 Hourly, best-effort (SCOPING section 5.1). Per site: fetches each
 configured obs source over a short live window, runs \code{qc_run()}/
-\code{fill_run()} over that window, applies current calibrations
-(\code{correct_apply()}, \code{target = "record"} for observations and
-\code{target = "forecast"} for the forecast head), archives current forecast
+\code{fill_run()} once over the whole window, archives current forecast
 issuances (\code{archive_forecasts()}), and advances the live watermark
-(\code{"observations"}/\code{"live"}).
+(\code{"observations"}/\code{"live"}). Correction is applied at SERVE time, not
+here (Plan 17: \code{met_wide()}/\code{build_history_daily()} apply the current
+calibration fresh on every read; see \code{R/correct-forecast.R} and
+\code{plans/17-correction-serve-wiring.md}'s "target architecture" note).
 }
 \details{
 GHCNh is never fetched here: its ~1-week lag (Plan 06 cadence metadata)

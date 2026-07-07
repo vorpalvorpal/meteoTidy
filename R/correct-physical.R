@@ -128,12 +128,21 @@ correct_physical_lapse <- function(value, elevation_delta, lapse_rate = 0.0065) 
 
 # Lapse-adjust one variable's obs rows for `site`. There is no established
 # "reference/grid elevation" concept anywhere in the codebase (adapters and
-# the dictionary carry no per-source grid elevation), so the default
-# elevation_delta is 0 -- a documented no-op that still stamps tier
-# "physical". A future plan wiring a grid elevation source would pass
-# elevation_delta explicitly.
-.correct_temperature_rows <- function(rows, site) { # nolint: object_usage_linter.
-  rows$value <- correct_physical_lapse(rows$value, elevation_delta = 0)
+# the dictionary carry no per-source grid elevation), so absent a caller-
+# supplied `grid_elevation` the default elevation_delta is 0 -- a documented
+# no-op that still stamps tier "physical". When `grid_elevation` is supplied
+# (metres), elevation_delta is the site's own elevation (`site@elevation`, a
+# units-classed quantity, converted via as.numeric() the same way
+# `.correct_wind_rows()` converts instrument height) minus the grid
+# elevation, and the lapse rate actually applies.
+.correct_temperature_rows <- function(rows, site, # nolint: object_usage_linter.
+                                      grid_elevation = NULL) {
+  elevation_delta <- if (is.null(grid_elevation)) {
+    0
+  } else {
+    as.numeric(site@elevation) - grid_elevation
+  }
+  rows$value <- correct_physical_lapse(rows$value, elevation_delta = elevation_delta)
   rows
 }
 
@@ -143,22 +152,30 @@ correct_physical_lapse <- function(value, elevation_delta, lapse_rate = 0.0065) 
 #' adjustment (SCOPING section 7.1): wind-speed variables get the log-wind-
 #' profile height correction from their instrument height to a 10 m
 #' reference (see `correct_physical_wind()`); temperature variables get the
-#' fixed-lapse-rate elevation adjustment (see `correct_physical_lapse()`).
-#' Variables with no physical adjustment defined simply pass through
-#' unchanged. Every output row is stamped `tier = "physical"` regardless --
-#' this is the day-0 tier, always applied, never fitted, and superseded once
-#' a fitted calibration exists (Plan 12).
+#' fixed-lapse-rate elevation adjustment (see `correct_physical_lapse()`),
+#' keyed on `grid_elevation` when supplied. Variables with no physical
+#' adjustment defined simply pass through unchanged. Every output row is
+#' stamped `tier = "physical"` regardless -- this is the day-0 tier, always
+#' applied, never fitted, and superseded once a fitted calibration exists
+#' (Plan 12).
 #'
 #' @param obs A canonical long obs tibble (possibly multiple variables).
 #' @param site A [met_site()] object, used to look up instrument height and
-#'   roughness length for the wind correction.
+#'   roughness length for the wind correction, and the site's own elevation
+#'   for the temperature lapse adjustment.
 #' @param ... Reserved for future physical adjustments (pressure reduction);
 #'   unused.
+#' @param grid_elevation Optional single double (metres), the elevation of
+#'   the grid/model cell the temperature values originate from. When
+#'   supplied, the lapse adjustment uses `elevation_delta = site elevation -
+#'   grid_elevation`; when `NULL` (default), the lapse adjustment stays a
+#'   no-op (no grid-elevation source exists yet to supply it) -- this
+#'   argument only makes the adjustment possible for a caller that has one.
 #' @return `obs` with `value` adjusted where a physical rule applies, and a
 #'   new/overwritten `tier` column set to `"physical"` for every row.
 #' @keywords internal
 #' @noRd
-correct_physical <- function(obs, site, ...) {
+correct_physical <- function(obs, site, ..., grid_elevation = NULL) {
   if (nrow(obs) == 0) {
     obs$tier <- character(0)
     return(obs)
@@ -171,7 +188,7 @@ correct_physical <- function(obs, site, ...) {
     rows <- if (.is_wind_speed_variable(variable)) {
       .correct_wind_rows(rows, site)
     } else if (.is_temperature_variable(variable)) {
-      .correct_temperature_rows(rows, site)
+      .correct_temperature_rows(rows, site, grid_elevation = grid_elevation)
     } else {
       rows
     }

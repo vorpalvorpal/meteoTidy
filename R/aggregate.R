@@ -83,43 +83,51 @@ aggregate_hourly <- function(obs, dict = met_variables()) {
   hour <- as.POSIXct(trunc(obs$datetime_utc, "hours"), tz = "UTC")
   variables <- unique(obs$variable)
 
-  out_rows <- list()
-  for (variable in variables) {
-    var_obs <- obs[obs$variable == variable, , drop = FALSE]
-    var_hour <- hour[obs$variable == variable]
-    expected <- .expected_per_hour(var_obs$datetime_utc)
-    stat_class <- dict$statistical_class[match(variable, dict$variable)]
+  # `.expected_per_hour()` is a property of a whole variable's own sampling
+  # cadence (across all its sites/hours), not of any one bucket, so it is
+  # computed once per variable here and looked up per row below -- exactly
+  # what the old per-variable loop iteration did before descending into its
+  # per-site/per-hour inner loops.
+  expected_by_variable <- vapply(variables, function(v) {
+    .expected_per_hour(obs$datetime_utc[obs$variable == v])
+  }, numeric(1))
+  expected <- expected_by_variable[match(obs$variable, variables)]
+  stat_class <- dict$statistical_class[match(obs$variable, dict$variable)]
 
-    for (site_id in unique(var_obs$site_id)) {
-      site_mask <- var_obs$site_id == site_id
-      for (h in unique(var_hour[site_mask])) {
-        bucket_mask <- site_mask & var_hour == h
-        bucket <- var_obs[bucket_mask, , drop = FALSE]
-        ok <- bucket[bucket$qc_flag == "ok" & !is.na(bucket$value), , drop = FALSE]
+  ok <- obs$qc_flag == "ok" & !is.na(obs$value)
+  group <- vctrs::vec_group_id(data.frame(site_id = obs$site_id, variable = obs$variable,
+                                          hour = hour, stringsAsFactors = FALSE))
 
-        completeness <- nrow(ok) / expected
-        if (completeness < .hourly_completeness_threshold()) {
-          next
-        }
+  # Bucket membership (all rows, including non-"ok") determines `expected`'s
+  # denominator match, but completeness/aggregation only ever look at "ok"
+  # rows -- so split "ok" row indices by their bucket's group id and iterate
+  # only the buckets that have at least one "ok" row.
+  ok_groups <- split(which(ok), group[ok])
 
-        value <- .aggregate_value(ok$value, stat_class)
-        out_rows[[length(out_rows) + 1]] <- tibble::tibble(
-          site_id = site_id,
-          datetime_utc = h,
-          variable = variable,
-          value = value,
-          source = ok$source[1],
-          method = "aggregated",
-          qc_flag = "ok"
-        )
-      }
+  out_rows <- lapply(ok_groups, function(idx) {
+    n_ok <- length(idx)
+    completeness <- n_ok / expected[idx[[1]]]
+    if (completeness < .hourly_completeness_threshold()) {
+      return(NULL)
     }
-  }
+    value <- .aggregate_value(obs$value[idx], stat_class[idx[[1]]])
+    tibble::tibble(
+      site_id = obs$site_id[idx[[1]]],
+      datetime_utc = hour[idx[[1]]],
+      variable = obs$variable[idx[[1]]],
+      value = value,
+      source = obs$source[idx[[1]]],
+      method = "aggregated",
+      qc_flag = "ok"
+    )
+  })
+  out_rows <- Filter(Negate(is.null), out_rows)
 
   if (length(out_rows) == 0) {
     return(obs[0, , drop = FALSE])
   }
-  tibble::as_tibble(do.call(rbind, out_rows))
+  out <- vctrs::vec_rbind(!!!out_rows)
+  out[order(out$site_id, out$variable, out$datetime_utc), , drop = FALSE]
 }
 
 # ---- hourly -> daily --------------------------------------------------------
@@ -187,48 +195,59 @@ aggregate_daily <- function(obs_hourly, site) {
   tz <- site@timezone
 
   variables <- unique(obs_hourly$variable)
-  out_rows <- list()
 
-  for (variable in variables) {
-    var_obs <- obs_hourly[obs_hourly$variable == variable, , drop = FALSE]
-    convention <- .daily_window_convention(variable)
-    day <- .assign_day(var_obs$datetime_utc, tz, convention)
-    stat_class <- dict$statistical_class[match(variable, dict$variable)]
-    if (is.na(stat_class)) stat_class <- "linear"
+  # Both the day-window convention and the statistical class are properties
+  # of the variable alone, so compute them once per distinct variable and
+  # look them up per row -- `.assign_day()` is vectorised, so it is called
+  # once per variable across all of that variable's rows (all sites),
+  # exactly matching what the old per-variable loop iteration computed
+  # before descending into its per-site/per-day inner loops.
+  convention_by_variable <- unname(vapply(variables, .daily_window_convention, character(1)))
+  stat_class_by_variable <- dict$statistical_class[match(variables, dict$variable)]
+  stat_class_by_variable[is.na(stat_class_by_variable)] <- "linear"
 
-    for (site_id in unique(var_obs$site_id)) {
-      site_mask <- var_obs$site_id == site_id
-      for (d in unique(day[site_mask])) {
-        bucket <- var_obs[site_mask & day == d & var_obs$qc_flag == "ok" &
-                            !is.na(var_obs$value), , drop = FALSE]
-        if (nrow(bucket) == 0) next
-
-        value <- .aggregate_value(bucket$value, stat_class)
-        day_label <- as.character(as.Date(d, origin = "1970-01-01"))
-        # rain_day rows are stamped at 9am local of the label day -- the same
-        # instant `.silo_day_to_utc_instant()` (R/source-silo.R) stamps SILO's
-        # value for that day, so the two legs of history_daily share both the
-        # physical window and the timestamp. calendar_day rows are stamped at
-        # local midnight of their day.
-        wall <- if (identical(convention, "rain_day")) "09:00:00" else "00:00:00"
-        day_instant <- as.POSIXct(paste(day_label, wall), tz = tz)
-        attr(day_instant, "tzone") <- "UTC"
-
-        out_rows[[length(out_rows) + 1]] <- tibble::tibble(
-          site_id = site_id,
-          datetime_utc = day_instant,
-          variable = variable,
-          value = value,
-          source = bucket$source[1],
-          method = "aggregated",
-          qc_flag = "ok"
-        )
-      }
-    }
+  day <- rep(as.Date(NA), nrow(obs_hourly))
+  convention <- convention_by_variable[match(obs_hourly$variable, variables)]
+  stat_class <- stat_class_by_variable[match(obs_hourly$variable, variables)]
+  for (i in seq_along(variables)) {
+    idx <- obs_hourly$variable == variables[[i]]
+    day[idx] <- .assign_day(obs_hourly$datetime_utc[idx], tz, convention_by_variable[[i]])
   }
+
+  ok <- obs_hourly$qc_flag == "ok" & !is.na(obs_hourly$value)
+  group <- vctrs::vec_group_id(data.frame(site_id = obs_hourly$site_id,
+                                          variable = obs_hourly$variable,
+                                          day = day, stringsAsFactors = FALSE))
+  ok_groups <- split(which(ok), group[ok])
+
+  out_rows <- lapply(ok_groups, function(idx) {
+    value <- .aggregate_value(obs_hourly$value[idx], stat_class[idx[[1]]])
+    d <- day[idx[[1]]]
+    day_label <- as.character(d)
+    conv <- convention[idx[[1]]]
+    # rain_day rows are stamped at 9am local of the label day -- the same
+    # instant `.silo_day_to_utc_instant()` (R/source-silo.R) stamps SILO's
+    # value for that day, so the two legs of history_daily share both the
+    # physical window and the timestamp. calendar_day rows are stamped at
+    # local midnight of their day.
+    wall <- if (identical(conv, "rain_day")) "09:00:00" else "00:00:00"
+    day_instant <- as.POSIXct(paste(day_label, wall), tz = tz)
+    attr(day_instant, "tzone") <- "UTC"
+
+    tibble::tibble(
+      site_id = obs_hourly$site_id[idx[[1]]],
+      datetime_utc = day_instant,
+      variable = obs_hourly$variable[idx[[1]]],
+      value = value,
+      source = obs_hourly$source[idx[[1]]],
+      method = "aggregated",
+      qc_flag = "ok"
+    )
+  })
 
   if (length(out_rows) == 0) {
     return(obs_hourly[0, , drop = FALSE])
   }
-  tibble::as_tibble(do.call(rbind, out_rows))
+  out <- vctrs::vec_rbind(!!!out_rows)
+  out[order(out$site_id, out$variable, out$datetime_utc), , drop = FALSE]
 }

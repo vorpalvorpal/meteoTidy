@@ -35,21 +35,36 @@
     return(corrected$value)
   }
 
-  window <- list(from = min(corrected$datetime_utc) - as.difftime(1095, units = "days"),
-                 to = max(corrected$datetime_utc))
-  hist <- build_history_daily(store_root, site, window)
-
-  climatology <- vapply(seq_len(nrow(corrected)), function(i) {
-    if (nrow(hist) == 0) {
-      return(corrected$value[[i]])
-    }
-    base <- baseline_climatology(hist, corrected$datetime_utc[[i]], corrected$variable[[i]])
-    if (is.na(base$mean)) corrected$value[[i]] else base$mean
-  }, numeric(1))
-
+  climatology <- .climatology_series(store_root, site, corrected$datetime_utc,
+                                     corrected$variable, corrected$value)
   weight <- ifelse(corrected$tier %in% c("mean_bias", "qmap", "emos"), 1, 0)
 
   shrink_to_climatology(corrected$value, climatology = climatology, weight = weight)
+}
+
+# Per-row day-of-year pooled climatology lookup (`build_history_daily()` +
+# `baseline_climatology()`), shared by `.correct_forecast_climatology()`
+# (record/donor correction, Plan 11) and `correct_forecast()`
+# (R/correct-forecast.R, Plan 17 item 1b) -- the same trailing-~3-year
+# pooling window, the same "no history to pool against -> fall back to the
+# row's own (uncorrected) value" rule, just generalised to an arbitrary
+# `times`/`variables` pair rather than assuming obs-shaped
+# `datetime_utc`/`variable` columns.
+.climatology_series <- function(store_root, site, times, variables, fallback) {
+  if (length(times) == 0) {
+    return(fallback)
+  }
+
+  window <- list(from = min(times) - as.difftime(1095, units = "days"), to = max(times))
+  hist <- build_history_daily(store_root, site, window)
+
+  vapply(seq_along(times), function(i) {
+    if (nrow(hist) == 0) {
+      return(fallback[[i]])
+    }
+    base <- baseline_climatology(hist, times[[i]], variables[[i]])
+    if (is.na(base$mean)) fallback[[i]] else base$mean
+  }, numeric(1))
 }
 
 # Read a site's current observations for (source, variable) from the store.
@@ -73,21 +88,35 @@
   correct_physical(obs, site = site)
 }
 
-# Apply a fitted (non-physical) tier's calibration to `obs`, delegating to
-# Plan 12's real per-tier apply_*() function. `newdata`'s columns are named
-# to match what each apply_*() expects (`issue_time`/`forecast`) even though
-# `obs` is observation-shaped (`datetime_utc`/`value`): the harmonic/qmap/
-# EMOS fits were trained on `forecast_obs_pairs()`-shaped pairs via
-# `correct_refit()`, so applying them here reuses the identical column
-# names by design, not by coincidence.
-.correct_apply_fitted <- function(obs, coeffs, tier) {
-  newdata <- tibble::tibble(issue_time = obs$datetime_utc, forecast = obs$value)
-  obs$value <- switch(tier,
+# Apply a fitted tier's coefficients to a `(issue_time, valid_time,
+# forecast)`-shaped `newdata`, dispatching to Plan 12's real per-tier
+# apply_*() function and always returning a plain numeric vector. The one
+# apply path both `.correct_apply_fitted()` (below, record/donor
+# correction) and `correct_forecast()` (R/correct-forecast.R, Plan 17 item 1)
+# call, so a tier's apply semantics are defined in exactly one place.
+.apply_fitted_values <- function(coeffs, tier, newdata) {
+  switch(tier,
     mean_bias = apply_mean_bias(coeffs, newdata)$value,
     qmap = apply_qmap(coeffs, newdata),
     emos = apply_emos(coeffs, newdata)$mean,
-    obs$value
+    newdata$forecast
   )
+}
+
+# Apply a fitted (non-physical) tier's calibration to `obs`, delegating to
+# `.apply_fitted_values()`. `newdata`'s columns are named to match what each
+# apply_*() expects (`issue_time`/`valid_time`/`forecast`) even though `obs`
+# is observation-shaped (`datetime_utc`/`value`): the harmonic/qmap/EMOS fits
+# were trained on `forecast_obs_pairs()`-shaped pairs via `correct_refit()`,
+# so applying them here reuses the identical column names by design, not by
+# coincidence. `issue_time` and `valid_time` are both set to `obs$datetime_utc`
+# -- a record/donor correction has no issue/valid distinction, it is a single
+# observation instant -- so `.mean_bias_time()` (R/tier-mean-bias.R) picks up
+# the same instant either way.
+.correct_apply_fitted <- function(obs, coeffs, tier) {
+  newdata <- tibble::tibble(issue_time = obs$datetime_utc, valid_time = obs$datetime_utc,
+                            forecast = obs$value)
+  obs$value <- .apply_fitted_values(coeffs, tier, newdata)
   obs$tier <- tier
   obs
 }
@@ -311,9 +340,24 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
   step <- .correct_refit_step()
   buffer <- .correct_refit_buffer()
 
+  # SCOPING section 7.1: promotion must beat the currently-FITTED incumbent,
+  # not merely raw -- otherwise a marginally-better candidate could displace
+  # an already-good calibration just for beating an uncorrected forecast.
+  # When a calibration is already on file for (variable, source), its tier's
+  # own fit/apply pair scores the incumbent's rolling-origin performance;
+  # absent one, raw (.verify_identity_*) is the incumbent, as before.
+  incumbent <- tryCatch(calib_read(store_root, sid, variable, source, version = "current"),
+                        error = function(e) NULL)
+  incumbent_fit_apply <- if (is.null(incumbent)) {
+    list(fit = .verify_identity_fit, apply = .verify_identity_apply)
+  } else {
+    .correct_refit_fit_apply(incumbent$manifest$tier[[1]])
+  }
+
   candidate_errs <- .rolling_origin_errors(pairs, fit_apply$fit, fit_apply$apply, step, buffer)
-  incumbent_errs <- .rolling_origin_errors(pairs, .verify_identity_fit, .verify_identity_apply,
-                                           step, buffer)
+  incumbent_errs <- .rolling_origin_errors(
+    pairs, incumbent_fit_apply$fit, incumbent_fit_apply$apply, step, buffer
+  )
   n <- min(length(candidate_errs), length(incumbent_errs))
   if (n == 0) {
     return(invisible(NULL)) # not enough out-of-sample data to evaluate the gate
@@ -355,9 +399,12 @@ correct_apply <- function(store_root, site, source, target = c("record", "foreca
 #' (`assemble_verification_pairs()`, R/verify.R); summarises them into a
 #' `training_summary` and calls `tier_select()` to pick a *candidate* tier;
 #' fits that tier via Plan 12's `fit_mean_bias()`/`fit_qmap()`/`fit_emos()`;
-#' scores the candidate against the incumbent (raw/uncorrected) tier
-#' out-of-sample (`rolling_origin_score()`-style rolling-origin evaluation,
-#' never on the fit's own training window); and gates the write on Plan 13's
+#' scores the candidate against the incumbent -- the currently-fitted
+#' calibration for `(variable, source)` if one exists, else raw/uncorrected
+#' (SCOPING section 7.1: promotion must beat what is actually deployed, not
+#' merely raw) -- out-of-sample (`rolling_origin_score()`-style rolling-origin
+#' evaluation, never on the fit's own training window); and gates the write
+#' on Plan 13's
 #' skill verdict (`skill_verdict_compute()`, significance via
 #' `block_bootstrap_ci()`): `calib_write()` **only if** the gate promotes,
 #' otherwise the incumbent calibration (if any) is left untouched.
