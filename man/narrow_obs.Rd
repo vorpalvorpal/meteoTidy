@@ -25,7 +25,7 @@ recoverable from the wide form and are filled with defaults
 carry them.
 }
 \examples{
-narrow_obs(widen_obs(new_obs(tibble::tibble(
+narrow_obs(widen_obs(tibble::tibble(
   site_id = "test",
   datetime_utc = as.POSIXct("2026-01-01", tz = "UTC"),
   variable = "temperature_2m",
@@ -33,7 +33,7 @@ narrow_obs(widen_obs(new_obs(tibble::tibble(
   source = "test_src",
   method = "measured",
   qc_flag = "ok"
-))))
+)))
 }
 \seealso{
 Other schema: 

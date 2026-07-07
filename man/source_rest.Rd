@@ -35,7 +35,7 @@ body into canonical rows.}
 \item \code{"header"} sends \verb{Authorization: <token>}, where \verb{<token>} is read from
 the environment variable named by \code{token_env} \strong{at fetch time}; the
 token is never stored on the adapter object and never appears in
-\code{print()}/\code{format()} output (SCOPING §11).
+\code{print()}/\code{format()} output (SCOPING section 11).
 \item \code{"basic"} uses \code{httr2::req_auth_basic()} with the username and
 password read from \code{paste0(token_env, "_USER")} and
 \code{paste0(token_env, "_PASS")} at fetch time.

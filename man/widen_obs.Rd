@@ -25,7 +25,9 @@ internally; Plan 15's emitter does the \code{time} rename at the outer
 boundary.
 }
 \examples{
-widen_obs(new_obs(tibble::tibble(
+# a canonical-shaped long obs tibble (the internal new_obs() validator is
+# not exported; an already-canonical literal needs no re-validation)
+widen_obs(tibble::tibble(
   site_id = "test",
   datetime_utc = as.POSIXct("2026-01-01", tz = "UTC"),
   variable = "temperature_2m",
@@ -33,7 +35,7 @@ widen_obs(new_obs(tibble::tibble(
   source = "test_src",
   method = "measured",
   qc_flag = "ok"
-)))
+))
 }
 \seealso{
 Other schema: 

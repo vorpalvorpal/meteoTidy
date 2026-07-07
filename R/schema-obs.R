@@ -117,7 +117,9 @@ new_obs <- function(df) {
 #' @family schema
 #' @export
 #' @examples
-#' widen_obs(new_obs(tibble::tibble(
+#' # a canonical-shaped long obs tibble (the internal new_obs() validator is
+#' # not exported; an already-canonical literal needs no re-validation)
+#' widen_obs(tibble::tibble(
 #'   site_id = "test",
 #'   datetime_utc = as.POSIXct("2026-01-01", tz = "UTC"),
 #'   variable = "temperature_2m",
@@ -125,7 +127,7 @@ new_obs <- function(df) {
 #'   source = "test_src",
 #'   method = "measured",
 #'   qc_flag = "ok"
-#' )))
+#' ))
 widen_obs <- function(obs, variables = NULL) {
   if (is.null(variables)) {
     variables <- met_variables()$variable
@@ -165,7 +167,7 @@ widen_obs <- function(obs, variables = NULL) {
 #' @family schema
 #' @export
 #' @examples
-#' narrow_obs(widen_obs(new_obs(tibble::tibble(
+#' narrow_obs(widen_obs(tibble::tibble(
 #'   site_id = "test",
 #'   datetime_utc = as.POSIXct("2026-01-01", tz = "UTC"),
 #'   variable = "temperature_2m",
@@ -173,7 +175,7 @@ widen_obs <- function(obs, variables = NULL) {
 #'   source = "test_src",
 #'   method = "measured",
 #'   qc_flag = "ok"
-#' ))))
+#' )))
 narrow_obs <- function(wide, source = NA_character_, method = "measured", qc_flag = "ok") {
   value_cols <- setdiff(names(wide), c("site_id", "datetime_utc"))
   long <- tidyr_like_pivot_longer(wide, value_cols)

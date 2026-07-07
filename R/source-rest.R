@@ -27,7 +27,7 @@
 #'   - `"header"` sends `Authorization: <token>`, where `<token>` is read from
 #'     the environment variable named by `token_env` **at fetch time**; the
 #'     token is never stored on the adapter object and never appears in
-#'     `print()`/`format()` output (SCOPING §11).
+#'     `print()`/`format()` output (SCOPING section 11).
 #'   - `"basic"` uses `httr2::req_auth_basic()` with the username and
 #'     password read from `paste0(token_env, "_USER")` and
 #'     `paste0(token_env, "_PASS")` at fetch time.
@@ -126,7 +126,7 @@ S7::method(fetch, source_rest) <- function(adapter, site, variables, window, now
     abort_meteo(
       c(
         "The response from {.url {url}} looks paginated.",
-        "i" = "{.fn source_rest} supports single-page responses only (SCOPING §13).",
+        "i" = "{.fn source_rest} supports single-page responses only (SCOPING section 13).",
         "i" = "Write a bespoke adapter for paginated APIs."
       ),
       class = "unsupported_response"
