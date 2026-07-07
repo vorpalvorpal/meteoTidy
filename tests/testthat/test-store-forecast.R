@@ -15,11 +15,22 @@ describe("store_write_forecast() / store_read_forecast()", {
     expect_equal(nrow(got), nrow(fc))
   })
 
-  it("dedups on (source, model, issue_time) so re-archiving is a no-op", {
+  it("dedups on the full row key so re-archiving is a no-op", {
     root <- local_store()
     fc <- new_forecast(make_forecast(n = 3))
     store_write_forecast(root, fc)
     store_write_forecast(root, fc)
+    expect_equal(nrow(store_read_forecast(root, "test")), 3)
+  })
+
+  it("completes a partially archived issuance instead of freezing it", {
+    # An issuance-level (source, model, issue_time) dedup key would drop the
+    # whole second batch because the issuance is already "known" -- freezing
+    # the archive at whatever subset a mid-publication sync happened to see.
+    root <- local_store()
+    fc <- new_forecast(make_forecast(n = 3))
+    store_write_forecast(root, fc[1:2, ])              # partial first sync
+    store_write_forecast(root, fc)                      # full re-fetch
     expect_equal(nrow(store_read_forecast(root, "test")), 3)
   })
 
@@ -59,7 +70,7 @@ describe("store_write_forecast_aux() / store_read_forecast_aux()", {
     expect_equal(nrow(got), 2)
   })
 
-  it("dedups on (source, issue_time) so re-archiving aux is a no-op", {
+  it("dedups on the full row key so re-archiving aux is a no-op", {
     root <- local_store()
     aux <- new_forecast_aux(make_forecast_aux(n = 2))
     store_write_forecast_aux(root, aux)

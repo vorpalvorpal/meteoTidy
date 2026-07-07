@@ -3,10 +3,14 @@
 # Partition layout: source=<src>/site_id=<id>/issue_date=<yyyy-mm-dd>, where
 # issue_date = as.Date(issue_time) in UTC, derived at write time.
 #
-# store_write_forecast() deduplicates on (source, model, issue_time): if an
-# issuance has already been archived, writing it again is a no-op. This
-# makes archiving idempotent without a supersede mechanism (forecasts are
-# immutable once issued; SCOPING §9).
+# store_write_forecast() deduplicates at ROW level (the full forecast key:
+# source, model, issue_time, valid_time, member, stat, variable): re-writing
+# an archived issuance is a no-op, and -- unlike an issuance-level
+# (source, model, issue_time) key -- a partially archived issuance (e.g. a
+# sync that ran while a source was still publishing steps) is completed by a
+# later re-fetch instead of being permanently frozen at whatever subset
+# happened to arrive first. Forecasts are immutable once issued (SCOPING §9),
+# so matching keys are dropped, never superseded.
 
 .forecast_issue_date <- function(issue_time) {
   format(issue_time, "%Y-%m-%d", tz = "UTC")
@@ -16,9 +20,10 @@
 #'
 #' Validates `fc` with `new_forecast()` and writes into the
 #' `source`/`site_id`/`issue_date`-partitioned forecast dataset.
-#' Deduplicates on `(source, model, issue_time)`: issuances already present
-#' in the store are dropped from the incoming batch before writing, so
-#' re-archiving an issuance is a no-op.
+#' Deduplicates on the full row key `(source, model, issue_time, valid_time,
+#' member, stat, variable)`: rows already present in the store are dropped
+#' from the incoming batch before writing, so re-archiving an issuance is a
+#' no-op while a partially archived issuance can still be completed later.
 #'
 #' @param store_root Root directory of the store.
 #' @param fc A canonical forecast tibble (see `new_forecast()`).
@@ -31,13 +36,15 @@
 store_write_forecast <- function(store_root, fc, now = .now()) {
   fc <- new_forecast(fc)
   .write_forecast_like(store_root, fc, table = "forecasts",
-                       dedup_cols = c("source", "model", "issue_time"))
+                       dedup_cols = c("source", "model", "issue_time",
+                                      "valid_time", "member", "stat", "variable"))
 }
 
 #' Write forecast_aux rows to the store
 #'
 #' Mirrors `store_write_forecast()` for the non-numeric companion table.
-#' Deduplicates on `(source, issue_time)`.
+#' Deduplicates on the full row key `(source, issue_time, valid_time,
+#' field)`.
 #'
 #' @inheritParams store_write_forecast
 #' @param aux A canonical forecast_aux tibble (see `new_forecast_aux()`).
@@ -46,7 +53,7 @@ store_write_forecast <- function(store_root, fc, now = .now()) {
 store_write_forecast_aux <- function(store_root, aux, now = .now()) {
   aux <- new_forecast_aux(aux)
   .write_forecast_like(store_root, aux, table = "forecast_aux",
-                       dedup_cols = c("source", "issue_time"))
+                       dedup_cols = c("source", "issue_time", "valid_time", "field"))
 }
 
 # Shared write path for forecasts/forecast_aux: partition by source +
@@ -181,6 +188,16 @@ store_read_forecast_aux <- function(store_root, site_id, source = NULL,
   out$issue_date <- NULL
   out$site_id <- as.character(out$site_id)
   out$source <- as.character(out$source)
+
+  # The dataset filters above prune on the day-granular issue_date partition
+  # column; re-apply the caller's exact POSIXct bounds so same-day earlier/
+  # later cycles are not leaked into (or out of) the window.
+  if (!is.null(issue_from)) {
+    out <- out[out$issue_time >= issue_from, , drop = FALSE]
+  }
+  if (!is.null(issue_to)) {
+    out <- out[out$issue_time <= issue_to, , drop = FALSE]
+  }
 
   if (!is.null(valid_from)) {
     out <- out[out$valid_time >= valid_from, , drop = FALSE]

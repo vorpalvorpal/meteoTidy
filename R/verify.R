@@ -216,7 +216,7 @@ verify_run <- function(store_root, site, sources, now = .now()) {
 
   if (nrow(pairs) == 0) {
     report <- .verification_report_empty()
-    .write_part(.verification_dir(store_root, sid), report)
+    .atomic_rewrite_partition(.verification_dir(store_root, sid), report)
     return(invisible(report))
   }
 
@@ -238,7 +238,11 @@ verify_run <- function(store_root, site, sources, now = .now()) {
   })
 
   report <- vctrs::vec_rbind(!!!rows)
-  .write_part(.verification_dir(store_root, sid), report)
+  # REPLACE the stored report rather than appending a new part-file:
+  # read_verification_report() rbinds every part-file in the directory, so an
+  # append here would duplicate rows on every met_refit() run -- the report
+  # is a "current state" product, not an accumulating log.
+  .atomic_rewrite_partition(.verification_dir(store_root, sid), report)
   invisible(report)
 }
 

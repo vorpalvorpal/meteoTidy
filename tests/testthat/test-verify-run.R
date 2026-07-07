@@ -58,4 +58,22 @@ describe("report persistence", {
     expect_s3_class(report, "tbl_df")
     expect_true(all(c("variable", "lead_bucket", "tier") %in% names(report)))
   })
+
+  it("replaces the stored report on re-run instead of accumulating rows", {
+    # Regression: verify_run() used to append a new part-file per run while
+    # read_verification_report() rbinds every part-file, so each met_refit()
+    # duplicated the whole report.
+    root <- local_store()
+    site <- make_test_site()
+    testthat::local_mocked_bindings(
+      assemble_verification_pairs = function(...) forecast_obs_pairs(n = 60)
+    )
+    verify_run(root, site, sources = "openmeteo",
+               now = as.POSIXct("2026-01-01", tz = "UTC"))
+    once <- read_verification_report(root, "test")
+    verify_run(root, site, sources = "openmeteo",
+               now = as.POSIXct("2026-02-01", tz = "UTC"))
+    twice <- read_verification_report(root, "test")
+    expect_equal(nrow(twice), nrow(once))
+  })
 })
