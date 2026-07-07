@@ -96,7 +96,7 @@ describe(".ecmwf_resolve_issue_times()", {
 
   it("returns every eligible cycle spanning issue_window, capped at now", {
     win <- list(from = as.POSIXct("2026-07-06 01:00", tz = "UTC"),
-               to = as.POSIXct("2026-07-06 20:00", tz = "UTC"))
+                to = as.POSIXct("2026-07-06 20:00", tz = "UTC"))
     all_cycles <- meteoTidy:::.ecmwf_resolve_issue_times(
       win, now = as.POSIXct("2026-07-06 20:00", tz = "UTC")
     )

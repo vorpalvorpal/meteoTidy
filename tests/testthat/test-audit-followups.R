@@ -112,9 +112,9 @@ describe("wide emitter provenance + ensemble handling (Plan 15 gaps)", {
     site <- make_test_site(store_root = root)
 
     calib_write(root, "test", "temperature_2m", "site_aws", "qmap",
-               tibble::tibble(group = "__pooled__"),
-               list(train_start = as.POSIXct("2025-01-01", tz = "UTC"),
-                    train_end = as.POSIXct("2025-06-01", tz = "UTC"), n_pairs = 200))
+                tibble::tibble(group = "__pooled__"),
+                list(train_start = as.POSIXct("2025-01-01", tz = "UTC"),
+                     train_end = as.POSIXct("2025-06-01", tz = "UTC"), n_pairs = 200))
 
     obs <- make_obs(n = 3, variable = "temperature_2m", source = "site_aws")
     testthat::local_mocked_bindings(met_record = function(...) obs)
