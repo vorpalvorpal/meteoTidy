@@ -41,34 +41,34 @@ for_each_site <- function(sites, fn, on_error = c("isolate", "stop"), ...) {
   on_error <- rlang::arg_match(on_error)
   sites <- as_met_sites(sites)
 
-  ids <- character(0)
-  statuses <- character(0)
-  messages <- character(0)
-  results <- list()
+  n <- length(sites@sites)
+  ids <- character(n)
+  statuses <- character(n)
+  messages <- rep(NA_character_, n)
+  # Pre-allocated and indexed by position: an error site's slot must stay
+  # NULL without shortening the list (`results[[i]] <- NULL` would delete
+  # the element and misalign every later site's result -- with tibble()
+  # then either erroring on the size mismatch or, worse, silently
+  # recycling a single surviving result across all rows).
+  results <- vector("list", n)
 
-  for (site in sites@sites) {
-    sid <- site_id(site)
+  for (i in seq_len(n)) {
+    site <- sites@sites[[i]]
+    ids[[i]] <- site_id(site)
 
     if (on_error == "stop") {
-      value <- fn(site)
-      ids <- c(ids, sid)
-      statuses <- c(statuses, "ok")
-      messages <- c(messages, NA_character_)
-      results[[length(results) + 1]] <- value
+      results[i] <- list(fn(site))
+      statuses[[i]] <- "ok"
       next
     }
 
     cnd <- rlang::catch_cnd(value <- fn(site), classes = "error")
     if (is.null(cnd)) {
-      ids <- c(ids, sid)
-      statuses <- c(statuses, "ok")
-      messages <- c(messages, NA_character_)
-      results[[length(results) + 1]] <- value
+      results[i] <- list(value)
+      statuses[[i]] <- "ok"
     } else {
-      ids <- c(ids, sid)
-      statuses <- c(statuses, "error")
-      messages <- c(messages, conditionMessage(cnd))
-      results[[length(results) + 1]] <- NULL
+      statuses[[i]] <- "error"
+      messages[[i]] <- conditionMessage(cnd)
     }
   }
 
