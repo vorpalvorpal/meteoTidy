@@ -2,10 +2,13 @@
 
 ## Objective
 
-Implement `source_ecmwf()` over ECMWF Open Data (CC-BY): the 46-day extended-range
-ensemble at 0.25°, read from GRIB2 via terra/GDAL’s GRIB driver, extracted at the
-site point, returned as canonical forecast rows. This is the one long-range
-channel whose issue-time archive the deployment fully controls (SCOPING §5.2).
+Implement `source_ecmwf()` over ECMWF Open Data (CC-BY): the **medium-range
+`enfo` ensemble** at 0.25° (see the "Deviation from SCOPING §5.2" note at the
+end — the 46-day `eefo` stream this plan originally targeted is **not** in the
+free open-data catalogue as of 2026-07-06), read from GRIB2 via terra/GDAL’s
+GRIB driver, extracted at the site point, returned as canonical forecast rows.
+This is the channel whose issue-time archive the deployment fully controls; the
+46-day long-range need is met by the Open-Meteo seasonal splice (SCOPING §5.2).
 The plan front-loads the **GRIB spike** (SCOPING §13/§14).
 
 ## Scope
