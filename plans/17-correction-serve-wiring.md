@@ -138,7 +138,7 @@ calibration to a forecast.
 **1b. Verified per-lead shrink weight.** Add to `R/correct-forecast.R`:
 
 ```r
-# serve_shrink_weight(store_root, site_id, source, variable, lead_bucket) -> [0,1]
+# serve_shrink_weight(store_root, site_id, source, variable, lead_bucket, tier) -> [0,1]
 #
 # Reads the stored verification report (read_verification_report()). If it holds
 # both a fitted-tier row and a "climatology" baseline row for
@@ -146,8 +146,19 @@ calibration to a forecast.
 # climatology_rmse), 0, 1): high skill vs climatology -> trust the correction
 # (weight -> 1); no skill over climatology -> shrink to climatology (weight 0).
 # If the report has no such rows yet (Item 5 not landed, or no history), fall
-# back to a tier-based weight: 1 for a fitted tier (mean_bias/qmap/emos), else 0.
+# back to weight 1 (trust the fitted correction until verification says otherwise).
 ```
+
+> **Shrinkage applies to FITTED tiers only.** Only `mean_bias`/`qmap`/`emos`
+> rows are shrunk toward climatology; a `physical` (day-0, no calibration) or
+> `raw` (model-only) tier **is** the model forecast and is served unchanged
+> (SCOPING §7.3, "never worse than the model"). Shrinking an uncorrected
+> forecast toward climatology would silently replace an actual weather forecast
+> with a climatological average wherever `history_daily` exists — the normal
+> post-`met_backfill()` state for any not-yet-calibrated variable. So the
+> shrink step must gate on the applied tier, **not** rely on a `physical`/`raw`
+> weight of 0. (Corrected here after review found the original "else 0" fallback
+> would blank out uncalibrated forecasts.)
 
 `skill_score()` and `clamp` (`pmin(pmax(x,0),1)`) already exist / are trivial.
 The climatology series for the shrink target is

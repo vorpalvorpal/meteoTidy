@@ -97,15 +97,18 @@ correct_forecast <- function(store_root, site, fc, now = .now()) {
 # has many rows sharing the same combination, and each `serve_shrink_weight()`
 # call reads the stored report from disk.
 #
-# Model-only rows (SCOPING section 7.3) are excluded entirely: there is no
-# site truth to build a climatology from for a model-only quantity, and
-# `correct_forecast()`'s own contract for them is "value unchanged" -- unlike
-# the physical/fitted tiers, which DO shrink (a low- or no-skill fitted tier
-# is exactly what shrinkage exists to guard against).
+# ONLY FITTED-TIER rows (`mean_bias`/`qmap`/`emos`) are shrunk. Shrinkage
+# toward climatology exists to guard a *fitted* correction against verified
+# skill decay at long lead (SCOPING section 7.1: "the QM tier therefore
+# blends toward climatology") -- it is not a way to second-guess an
+# uncorrected forecast. A `physical` (day-0, no calibration) or `raw`
+# (model-only) tier IS the model forecast, and must be served as-is
+# (SCOPING section 7.3: "never worse than the model"); shrinking it toward
+# climatology would silently replace an actual weather forecast with a
+# climatological average wherever `history_daily` exists -- exactly the
+# normal post-`met_backfill()` state for any not-yet-calibrated variable.
 .correct_forecast_shrink <- function(store_root, site, sid, out) {
-  shrinkable <- vapply(out$variable, function(v) {
-    !isTRUE(met_variable(v)$measurability_class == "model_only")
-  }, logical(1))
+  shrinkable <- out$tier %in% c("mean_bias", "qmap", "emos")
   if (!any(shrinkable)) {
     return(out)
   }
@@ -137,8 +140,11 @@ correct_forecast <- function(store_root, site, fc, now = .now()) {
 #' clamped to `[0, 1]`: high skill vs. climatology trusts the correction
 #' (weight -> 1); no skill over climatology shrinks fully to climatology
 #' (weight 0). If the report has no such rows yet (no `verify_run()` has
-#' landed, or no matching history), falls back to a tier-based weight: `1`
-#' for a fitted tier (`mean_bias`/`qmap`/`emos`), else `0`.
+#' landed, or no matching history), falls back to weight `1` for a fitted
+#' tier -- trust the correction until verification says otherwise. Only
+#' fitted tiers ever reach this function (`.correct_forecast_shrink()` gates
+#' on the applied tier); the `else 0` branch is a defensive default, never
+#' used to shrink an uncorrected `physical`/`raw` forecast.
 #'
 #' @param store_root Root directory of the store.
 #' @param site_id Site identifier.

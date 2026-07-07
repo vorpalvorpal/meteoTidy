@@ -63,6 +63,35 @@ describe("item 1: met_wide(kind='forecast') applies the current calibration", {
     expect_equal(as.numeric(out$temperature_2m), 12)
     expect_equal(met_provenance(out)$tier, "physical")
   })
+
+  it("serves an uncalibrated forecast raw even when SILO climatology exists", {
+    # Regression (review): shrinkage toward climatology is a FITTED-tier guard.
+    # A physical-tier (no-calibration) forecast must NOT be replaced by
+    # climatology just because history_daily exists -- that would blank out
+    # every not-yet-calibrated forecast variable on a normal deployment.
+    root <- local_store()
+    site <- make_test_site(store_root = root)
+
+    days <- seq(as.POSIXct("2025-01-01", tz = "UTC"),
+                as.POSIXct("2026-02-01", tz = "UTC"), by = "day")
+    doy <- as.integer(format(days, "%j"))
+    store_write_obs(root, new_obs(tibble::tibble(
+      site_id = "test", datetime_utc = days, variable = "temperature_2m",
+      value = 15 + 10 * sin(2 * pi * doy / 365.25), source = "silo",
+      method = "model_fill", qc_flag = "ok"
+    )))
+
+    issue <- as.POSIXct("2026-01-15 00:00", tz = "UTC")
+    fc <- make_forecast(n = 1, variable = "temperature_2m", source = "openmeteo",
+                        value = 40, issue_time = issue)   # far from climatology (~17)
+    store_write_forecast(root, new_forecast(fc))
+    valid <- fc$valid_time[1]
+
+    out <- met_wide(site, window = list(from = valid - 3600, to = valid + 3600),
+                    kind = "forecast", variables = "temperature_2m", now = issue)
+    expect_equal(as.numeric(out$temperature_2m), 40)   # the forecast, not climatology
+    expect_equal(met_provenance(out)$tier, "physical")
+  })
 })
 
 describe("item 1c: met_sync_live no longer computes-and-discards corrections", {
