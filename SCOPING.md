@@ -788,6 +788,20 @@ would need a policy re-check first.
   (`stars` may help). Spike this early; if the driver proves insufficient for
   the ensemble files, the adapter degrades to the Open-Meteo seasonal splice and
   full ECMWF support moves post-v1.
+  **Post-audit addendum (2026-07-07):** the libaec caveat is not hypothetical
+  -- the CRAN macOS binary `terra` (bundled GDAL 3.8.5) genuinely lacks it, and
+  a newer, source-built GDAL is not a clean substitute either: a GDAL/terra
+  built against Homebrew's current `gdal` (which does have libaec) fixed the
+  CCSDS decode but broke `terra::meta()`'s band-metadata parsing, since
+  metadata exposure drifted between GDAL 3.8.5 and 3.13.1. Rather than chase
+  GDAL version compatibility, `ecmwf_install_eccodes()` (`R/ecmwf-eccodes.R`)
+  provisions a CLI-only, decode-*only* fallback: eccodes (ECMWF's own GRIB
+  library) via a self-managed `micromamba`/conda-forge install, invoked only
+  for the point-value decode step (`grib_ls -l lat,lon,1`, a first-class
+  eccodes CLI feature) while terra/GDAL still supplies all band metadata
+  (param/unit/step/member), which never needed CCSDS decode in the first
+  place. Never triggered automatically; a one-time, explicit, cached
+  provisioning step.
 - **Timezone/DST** at the daily boundary (mitigated by matching the BOM/SILO
   9am local-clock-time convention, §3);
   **small-sample overfitting** (mitigated by enforced tier gates plus

@@ -25,6 +25,7 @@ dispatching on each source's \code{adapter} field: \code{"rest"} builds a
 \seealso{
 Other adapter: 
 \code{\link{apply_mapping}()},
+\code{\link{ecmwf_install_eccodes}()},
 \code{\link{fetch}()},
 \code{\link{fetch_forecast}()},
 \code{\link{fetch_forecast_aux}()},

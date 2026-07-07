@@ -164,6 +164,12 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Plan 08 — ECMWF adapter (R/grib-read.R, R/source-ecmwf.R)
       "meteoTidy_error_terra_required",
       "meteoTidy_error_grib_ccsds_unsupported",
+      # Post-audit — eccodes CLI decode fallback (R/ecmwf-eccodes.R)
+      "meteoTidy_error_eccodes_unsupported_platform",
+      "meteoTidy_error_eccodes_install_failed",
+      "meteoTidy_error_eccodes_required",
+      "meteoTidy_error_eccodes_decode_failed",
+      "meteoTidy_error_eccodes_alignment_mismatch",
       # Plan 09 -- QC engine (R/qc-spatial.R)
       "meteoTidy_error_spatial_not_applicable",
       # Plan 10 -- transfer engine (R/transfer.R)
@@ -241,6 +247,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval.", # nolint: line_length_linter.
       "source_ecmwf()'s fetch_forecast() was called but the terra package is not installed.",
       "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support).", # nolint: line_length_linter.
+      "ecmwf_install_eccodes() has no known micromamba build for the running platform.",
+      "micromamba failed to download or failed to install eccodes.",
+      "The eccodes CLI decode fallback was needed but grib_ls could not be found.", # nolint: line_length_linter.
+      "eccodes' grib_ls failed to decode a GRIB2 message.",
+      "eccodes' per-message decode order did not match GDAL's per-band metadata order.", # nolint: line_length_linter.
       "qc_spatial() was called on a model_only variable, which has no site truth to buddy-check against (SCOPING section 7.3).", # nolint: line_length_linter.
       "fit_transfer() was called with source/target series that share no overlapping timestamp to fit against.", # nolint: line_length_linter.
       "fill_micro()/fill_tier() needs a met_site to fill a clear_sky_indexed variable but none was supplied.", # nolint: line_length_linter.

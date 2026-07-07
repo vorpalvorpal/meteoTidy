@@ -335,18 +335,66 @@ S7::method(fetch_forecast, source_ecmwf) <- function(
     )))
   }
 
-  .grib_check_ccsds_support()
-
   local_path <- .ecmwf_download_messages(base_url, messages)
   rast <- grib_open(local_path)
   coords <- site_coords(site)
-  vals <- grib_extract_point(
-    rast,
-    lat = as.numeric(units::drop_units(coords$latitude)),
-    lon = as.numeric(units::drop_units(coords$longitude))
+  lat <- as.numeric(units::drop_units(coords$latitude))
+  lon <- as.numeric(units::drop_units(coords$longitude))
+
+  field_tbl <- grib_field_table(rast) # metadata-only; never needs CCSDS decode
+
+  # Attempting the real point extraction on the just-downloaded file is the
+  # only reliable CCSDS-decode capability check (see R/grib-read.R's
+  # `.grib_check_ccsds_support()` header note): it fails, on a build without
+  # libaec, exactly here. When it does, fall back to the eccodes CLI decode
+  # path (R/ecmwf-eccodes.R) if provisioned/available; otherwise re-abort
+  # with guidance pointing at both remediation options.
+  # A build without libaec support fails at *value read* time (see
+  # R/grib-read.R's `.grib_check_ccsds_support()` header note) -- this
+  # manifests as either an R error or (GDAL's own C-level complaint,
+  # observed live) a warning that a subsequent read then errors on; both are
+  # caught the same way, so a real user never sees GDAL's raw "Out of
+  # memory"-style noise on a run that goes on to succeed via the fallback.
+  ccsds_fallback <- function(cnd) {
+    if (.have_eccodes()) {
+      list(method = "eccodes")
+    } else {
+      abort_meteo(
+        c(
+          "GDAL could not read a CCSDS/AEC-compressed ECMWF GRIB2 message, and no eccodes fallback is available.", # nolint: line_length_linter.
+          "x" = "This usually means the installed GDAL build lacks libaec support (OSGeo/gdal#8108).", # nolint: line_length_linter.
+          "i" = "Run {.fn ecmwf_install_eccodes} to provision a CLI-only decode fallback, or use {.code source_openmeteo(product = \"seasonal\")} as a no-GRIB alternative." # nolint: line_length_linter.
+        ),
+        class = "grib_ccsds_unsupported"
+      )
+    }
+  }
+  decode <- withCallingHandlers(
+    tryCatch(
+      list(method = "terra", vals = grib_extract_point(rast, lat = lat, lon = lon)),
+      error = ccsds_fallback
+    ),
+    warning = function(w) invokeRestart("muffleWarning")
   )
-  field_tbl <- grib_field_table(rast)
-  field_tbl$value_raw <- vals[seq_len(nrow(field_tbl))]
+
+  if (identical(decode$method, "eccodes")) {
+    ecc <- .eccodes_extract_point(local_path, lat = lat, lon = lon)
+    # Positional alignment (band i <-> message i) is the same convention
+    # grib_field_table()/grib_extract_point() already rely on; member is
+    # cross-checked (when both sides know it) as a belt-and-braces guard
+    # against a silent misalignment corrupting values.
+    known <- !is.na(field_tbl$member) & !is.na(ecc$member)
+    if (any(known) && !identical(field_tbl$member[known], ecc$member[known])) {
+      abort_meteo(
+        "eccodes' message order did not match GDAL's band order for {.file {local_path}}.", # nolint: line_length_linter.
+        class = "eccodes_alignment_mismatch"
+      )
+    }
+    field_tbl$unit <- vapply(ecc$unit, .eccodes_unit_to_udunits, character(1))
+    field_tbl$value_raw <- ecc$value[seq_len(nrow(field_tbl))]
+  } else {
+    field_tbl$value_raw <- decode$vals[seq_len(nrow(field_tbl))]
+  }
 
   # Direct-param variables (temperature_2m via "2t"): a single GRIB param
   # maps straight to the canonical variable.

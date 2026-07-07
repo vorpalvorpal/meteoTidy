@@ -53,6 +53,7 @@ met_mapping(
 Other adapter: 
 \code{\link{adapters_for_site}()},
 \code{\link{apply_mapping}()},
+\code{\link{ecmwf_install_eccodes}()},
 \code{\link{fetch}()},
 \code{\link{fetch_forecast}()},
 \code{\link{fetch_forecast_aux}()},

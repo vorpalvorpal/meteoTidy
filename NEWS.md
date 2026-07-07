@@ -427,3 +427,27 @@
   `taskscheduleR` recipes for all four verbs and the BOM hourly-vs-daily
   backfill trade-off. This completes the planned 00-16 implementation
   series.
+- Post-implementation audit fixes: `correct_refit()` now really fits,
+  out-of-sample scores, skill-gates, and writes calibrations (previously a
+  stub, so no calibration was ever persisted); `.correct_apply_fitted()`
+  delegates to the real per-tier `apply_*()` functions; ECMWF's advertised
+  `wind_speed_10m`/`wind_direction_10m` are now actually derived from the
+  `10u`/`10v` GRIB bands instead of silently dropped; ECMWF issue-cycle
+  resolution now rounds to the real 00/06/12/18Z schedule; `met_wide()`
+  reports each variable's real correction tier and averages ensemble
+  members instead of an arbitrary first-row pick; `weatherOz` is pinned to
+  `>= 3.0.0`, and a real bug where SILO's response columns (`air_tmax`/
+  `air_tmin`/`rainfall`) never matched the request-side codes
+  (`max_temp`/`min_temp`/`rain`) `.silo_variable_map()` was keyed on --
+  silently dropping temperature/rainfall from every real SILO fetch -- is
+  fixed; the four condition classes raised by `R/secrets.R`/
+  `source_ecmwf()` but missing from `meteo_conditions()` are registered.
+- `ecmwf_install_eccodes()`: a CLI-only fallback for the CCSDS/AEC-compressed
+  pixel data many GDAL builds (including the CRAN macOS binary `terra`
+  bundles) cannot decode. Provisions `eccodes` (the C library + CLI tools
+  only, no Python) from conda-forge via a self-managed `micromamba`
+  install, cached under `tools::R_user_dir("meteoTidy", "cache")` --
+  never triggered automatically, a one-time opt-in step. `fetch_forecast()`
+  on `source_ecmwf()` now falls back to it automatically (via `grib_ls`'s
+  built-in nearest-gridpoint query) when GDAL's own decode fails and
+  eccodes is available, rather than always aborting `grib_ccsds_unsupported`.

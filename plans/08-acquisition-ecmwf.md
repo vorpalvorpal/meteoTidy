@@ -239,3 +239,57 @@ is meaningful on both a libaec-enabled and a libaec-less GDAL build. Getting a
 libaec-enabled GDAL working with `terra` in this environment (a from-source
 `terra` rebuild against a system GDAL) was deferred as a separate, larger
 piece of work (user confirmed) rather than blocking this plan.
+
+## Post-audit follow-up: the eccodes CLI fallback (2026-07-07)
+
+The deferred libaec item above was picked back up and investigated properly.
+A from-source `terra` rebuilt against Homebrew's current `gdal` (which does
+bundle libaec) **does** fix the CCSDS decode -- verified live: a real
+CCSDS-compressed message decoded to plausible values via `terra::extract()`.
+But it is not a clean substitute for the CRAN binary: GDAL's own band-metadata
+exposure drifted between 3.8.5 (the CRAN binary) and 3.13.1 (current
+Homebrew), and `terra::meta(rast, layers = TRUE)` -- the call
+`.grib_band_tag()` depends on -- stopped surfacing `GRIB_UNIT`/
+`GRIB_FORECAST_SECONDS`/`GRIB_PDS_TEMPLATE_ASSEMBLED_VALUES` against the newer
+GDAL, even though `gdalinfo -json` (the same GDAL library, no terra involved)
+reports them correctly. This reproduced identically with both terra's GitHub
+HEAD and the latest CRAN-released source build, so it looks like a genuine
+terra/newer-GDAL incompatibility, not a fluke of unreleased code -- chasing a
+"right" GDAL version is not a stable foundation to build on.
+
+Since the CCSDS/AEC compression only affects a GRIB2 message's *pixel data*
+section -- its metadata (PDS/GDS) is always plain and already read correctly
+by the CRAN binary's terra -- the decode step is separable from everything
+else this plan needs. `R/ecmwf-eccodes.R` adds a narrow, decode-only fallback
+using eccodes (ECMWF's own GRIB library, which handles every packing
+template reliably): `grib_ls -l lat,lon,1`, a first-class eccodes CLI feature
+purpose-built for "value nearest this point" (not `grib_get_data`, which
+dumps every one of ECMWF's ~1.04M global gridpoints per message -- wildly
+wasteful for a single-site query). CLI, not eccodes' Python bindings: this
+package already treats one heavy optional binary (terra/GDAL) as
+Suggests-gated; a second optional *binary* is a smaller footprint than also
+managing a Python interpreter + numpy + `python-eccodes`.
+
+eccodes is an external system binary, not an R package, so it cannot be
+declared as a normal dependency (`SystemRequirements` documents it, but that
+is informational only -- nothing auto-installs it for a user). Rather than
+brew/apt/choco (three divergent code paths, each needing a system package
+manager that may need elevated privileges, installing into unpinned *shared*
+system state -- exactly the GDAL-version-drift problem above, not a fix for
+it), `ecmwf_install_eccodes()` downloads `micromamba` (a tiny, dependency-free
+package manager, ~7-14MB, downloaded once) and uses it to install the plain
+`eccodes` conda-forge package into one self-contained, deletable folder under
+`tools::R_user_dir("meteoTidy", "cache")` -- pinned, reproducible, and
+identical across macOS/Linux/Windows. This is never triggered automatically;
+`fetch_forecast()` only reaches for it when GDAL's own decode fails at value-
+read time and a usable `grib_ls` happens to already be cached or on `PATH`.
+
+Verified live end-to-end (2026-07-07), the exact mechanism now shipped: a
+real `micromamba create -c conda-forge eccodes`, followed by `grib_ls -j -l
+lat,lon,1` against the committed CCSDS fixture, decoded all 3 members to the
+same values (Kelvin, converted to Celsius) as a from-source terra/Homebrew-GDAL
+decode of the identical file -- two independent decoders agreeing. eccodes
+reports the *native* GRIB2 unit (Kelvin for temperature), unlike GDAL's GRIB
+driver, which auto-converts to Celsius on read -- `fetch_forecast()` uses
+eccodes' own reported unit for `to_canonical()` when the fallback path is
+taken, not GDAL's.

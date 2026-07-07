@@ -53,6 +53,10 @@ Suggests:
     rmarkdown,
     terra,
     testthat (>= 3.0.0)
+SystemRequirements: eccodes (optional; https://confluence.ecmwf.int/display/ECC
+    -- only needed as a CLI-only fallback CCSDS/AEC decoder for source_ecmwf()
+    on a GDAL build without libaec support; see ecmwf_install_eccodes(), which
+    provisions it via micromamba/conda-forge if not already on PATH)
 VignetteBuilder: knitr
 Collate:
     'adapter-mapping.R'
@@ -77,6 +81,8 @@ Collate:
     'dict-builtin.R'
     'dict.R'
     'donor-ladder.R'
+    'http.R'
+    'ecmwf-eccodes.R'
     'ecmwf-index.R'
     'enums.R'
     'fill-tiers.R'
@@ -84,7 +90,6 @@ Collate:
     'fill.R'
     'grib-read.R'
     'history-products.R'
-    'http.R'
     'source-ghcnh.R'
     'met-backfill.R'
     'met-table.R'

@@ -37,13 +37,7 @@ describe("fetch_forecast() end-to-end", {
     adapter <- source_ecmwf()
     win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
                 to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
-    # mock the range-download seam to hand back the committed fixture bytes
-    testthat::local_mocked_bindings(
-      .http_get = function(url, headers = list(), parse = "json", ...) {
-        if (grepl("index", url)) return(ecmwf_index_lines())
-        readBin(ecmwf_grib_path(), "raw", file.info(ecmwf_grib_path())$size)
-      }
-    )
+    testthat::local_mocked_bindings(.http_get = mock_ecmwf_http_get())
     result <- tryCatch(
       fetch_forecast(adapter, site, "temperature_2m", win,
                      now = as.POSIXct("2026-01-01", tz = "UTC")),
@@ -62,6 +56,53 @@ describe("fetch_forecast() end-to-end", {
       # valid_time should be issue_time plus the forecast step
       expect_true(all(result$valid_time > result$issue_time))
     }
+  })
+})
+
+describe("eccodes fallback wiring (post-audit item 5)", {
+  # Deterministic, mocked coverage of the fallback branch in fetch_forecast()
+  # -- independent of whatever eccodes happens to be on this machine's PATH
+  # (see test-ecmwf-eccodes.R for the real, gated end-to-end coverage).
+  it("falls back to eccodes when terra can't decode CCSDS and eccodes is available", {
+    skip_unless_grib_ready() # still needs terra for grib_open()/grib_field_table()
+    site <- make_test_site()
+    adapter <- source_ecmwf()
+    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
+                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
+    testthat::local_mocked_bindings(
+      .http_get = mock_ecmwf_http_get(),
+      grib_extract_point = function(...) stop("simulated CCSDS decode failure"),
+      .have_eccodes = function() TRUE,
+      .eccodes_extract_point = function(path, lat, lon) {
+        tibble::tibble(member = c(1L, 2L, 3L), value = c(295.4, 295.9, 294.8), unit = "K")
+      }
+    )
+    result <- fetch_forecast(adapter, site, "temperature_2m", win,
+                             now = as.POSIXct("2026-01-01", tz = "UTC"))
+    expect_canonical_forecast(result)
+    expect_setequal(result$member, c(1L, 2L, 3L))
+    # K -> canonical degC via to_canonical(), not still Kelvin-scale.
+    expect_true(all(result$value > 15 & result$value < 25))
+  })
+
+  it("aborts grib_ccsds_unsupported, mentioning ecmwf_install_eccodes(), when eccodes isn't available either", { # nolint: line_length_linter.
+    skip_unless_grib_ready()
+    site <- make_test_site()
+    adapter <- source_ecmwf()
+    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
+                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
+    testthat::local_mocked_bindings(
+      .http_get = mock_ecmwf_http_get(),
+      grib_extract_point = function(...) stop("simulated CCSDS decode failure"),
+      .have_eccodes = function() FALSE
+    )
+    err <- expect_error(
+      fetch_forecast(adapter, site, "temperature_2m", win,
+                     now = as.POSIXct("2026-01-01", tz = "UTC")),
+      class = "meteoTidy_error_grib_ccsds_unsupported"
+    )
+    expect_match(conditionMessage(err), "ecmwf_install_eccodes", fixed = TRUE)
+    expect_match(conditionMessage(err), "seasonal", ignore.case = TRUE)
   })
 })
 

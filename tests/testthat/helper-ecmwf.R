@@ -43,3 +43,37 @@ ecmwf_ccsds_supported <- function() {
     length(vals) > 0 && all(is.finite(vals))
   }, error = function(e) FALSE, warning = function(w) FALSE)
 }
+
+# A `.http_get()` mock for the range-download seam that hands back the
+# committed fixture bytes, honouring the requested Range header (real ECMWF
+# HTTP 206 responses return exactly the requested byte span -- VERIFIED live
+# 2026-07-06, see R/ecmwf-eccodes.R's header notes). Ignoring Range here (the
+# naive "just return the whole file" mock) concatenates N whole-file copies
+# into one local file whenever more than one message is selected, producing
+# duplicate messages the moment a real decode actually succeeds (terra or
+# eccodes) -- a real bug this fixed, not a hypothetical one.
+mock_ecmwf_http_get <- function() {
+  function(url, headers = list(), parse = "json", ...) {
+    if (grepl("index", url)) {
+      return(ecmwf_index_lines())
+    }
+    all_bytes <- readBin(ecmwf_grib_path(), "raw", file.info(ecmwf_grib_path())$size)
+    range <- headers$Range
+    if (is.null(range)) {
+      return(all_bytes)
+    }
+    m <- regmatches(range, regexec("bytes=(\\d+)-(\\d+)", range))[[1]]
+    all_bytes[(as.integer(m[2]) + 1):(as.integer(m[3]) + 1)]
+  }
+}
+
+# Skip a test unless a real, usable eccodes install is present (either
+# provisioned via ecmwf_install_eccodes() or already on PATH). The
+# eccodes-based decode fallback (R/ecmwf-eccodes.R) is otherwise unit-tested
+# against mocked system2()/canned JSON; this gate is for the genuine,
+# end-to-end "does grib_ls actually decode our real fixture" tests, mirroring
+# skip_unless_grib_ready()/ecmwf_ccsds_supported()'s pattern -- skip cleanly,
+# never fail, when the environment doesn't have it.
+skip_unless_eccodes_ready <- function() {
+  testthat::skip_if_not(.have_eccodes(), "eccodes (grib_ls) is not available in this environment")
+}
