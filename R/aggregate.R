@@ -141,16 +141,21 @@ aggregate_hourly <- function(obs, dict = met_variables()) {
 }
 
 # The "day" (a Date) each `datetime_utc` belongs to, for a given convention,
-# in the site's local timezone. `"rain_day"` shifts local time back 9 hours
-# before taking the calendar date, so the 9am boundary becomes the day
-# change -- this correctly inherits the DST offset AT EACH TIMESTAMP's own
-# local conversion (rather than computing a single static UTC window), so a
-# DST-transition day naturally becomes a 23-/25-hour day by construction
-# (SCOPING section 3).
+# in the site's local timezone. `"rain_day"` implements SILO's documented
+# convention (plans/10: "24 h to 9am, assigned to the DAY OF OBSERVATION"):
+# the window (9am D-1, 9am D] is labelled D, i.e. a timestamp at or after
+# 9am local wall-clock belongs to the NEXT day's label. The comparison is
+# on the local wall clock itself (not a fixed 9-hour offset in absolute
+# time), so the boundary follows the clock through DST transitions and a
+# transition day is naturally a 23-/25-hour day (SCOPING section 3).
 .assign_day <- function(datetime_utc, timezone, convention) {
-  local <- as.POSIXct(format(datetime_utc, tz = timezone), tz = timezone)
-  shifted <- if (identical(convention, "rain_day")) local - 9 * 3600 else local
-  as.Date(format(shifted, tz = timezone))
+  local_str <- format(datetime_utc, tz = timezone)
+  day <- as.Date(substr(local_str, 1, 10))
+  if (identical(convention, "rain_day")) {
+    hour <- as.integer(format(datetime_utc, "%H", tz = timezone))
+    day <- day + as.integer(hour >= 9)
+  }
+  day
 }
 
 #' Aggregate hourly observations to daily on the local-day boundary
@@ -169,8 +174,9 @@ aggregate_hourly <- function(obs, dict = met_variables()) {
 #'   `aggregate_hourly()`'s output).
 #' @param site A `met_site` object (supplies the IANA timezone).
 #' @return A canonical long obs tibble, one row per `(site_id, variable,
-#'   day)`, `datetime_utc` set to local midnight (UTC-labelled instant) of
-#'   the assigned day, `method = "aggregated"`.
+#'   day)`, `datetime_utc` set to local midnight of the assigned day (9am
+#'   local for `rain_day` variables, matching the SILO ingest instant),
+#'   `method = "aggregated"`.
 #' @keywords internal
 #' @noRd
 aggregate_daily <- function(obs_hourly, site) {
@@ -199,7 +205,13 @@ aggregate_daily <- function(obs_hourly, site) {
 
         value <- .aggregate_value(bucket$value, stat_class)
         day_label <- as.character(as.Date(d, origin = "1970-01-01"))
-        day_instant <- as.POSIXct(paste(day_label, "00:00:00"), tz = tz)
+        # rain_day rows are stamped at 9am local of the label day -- the same
+        # instant `.silo_day_to_utc_instant()` (R/source-silo.R) stamps SILO's
+        # value for that day, so the two legs of history_daily share both the
+        # physical window and the timestamp. calendar_day rows are stamped at
+        # local midnight of their day.
+        wall <- if (identical(convention, "rain_day")) "09:00:00" else "00:00:00"
+        day_instant <- as.POSIXct(paste(day_label, wall), tz = tz)
         attr(day_instant, "tzone") <- "UTC"
 
         out_rows[[length(out_rows) + 1]] <- tibble::tibble(

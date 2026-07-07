@@ -92,7 +92,16 @@ build_history_daily <- function(store_root, site, window) {
   aws <- raw[raw$source != "silo", , drop = FALSE]
   aws_clean <- aws[.is_qc_clean(aws$qc_flag), , drop = FALSE]
 
-  key <- function(df) paste(df$variable, format(df$datetime_utc, "%Y-%m-%d"), sep = "\r")
+  # Composite on the SITE-LOCAL calendar date, not the UTC date: SILO rows
+  # are stamped at 9am local (`.silo_day_to_utc_instant()`) and AWS daily
+  # aggregates at local midnight (rain: 9am local) -- for an Australian site
+  # both instants fall on the previous UTC date, and for other offsets they
+  # can fall on different UTC dates, so a UTC-date key would pair the wrong
+  # (or no) days across the two legs.
+  tz <- site@timezone
+  key <- function(df) {
+    paste(df$variable, format(df$datetime_utc, "%Y-%m-%d", tz = tz), sep = "\r")
+  }
   silo_key <- key(silo)
   aws_key <- key(aws_clean)
 
