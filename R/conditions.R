@@ -192,7 +192,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_missing_versions",
       "meteoTidy_warning_met_table_downgraded",
       "meteoTidy_error_schema_violation",
-      "meteoTidy_warning_mixed_tier"
+      "meteoTidy_warning_mixed_tier",
+      "meteoTidy_error_multi_site_wide"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -265,7 +266,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "new_met_table()'s versions argument is missing schema_version or calibration_manifest_version.", # nolint: line_length_linter.
       "A dplyr operation on a met_table invalidated its provenance (dropped a value column, or bind_rows mixed incompatible provenance); downgraded to a plain tibble.", # nolint: line_length_linter.
       "met_ingest() received a plain tibble that does not satisfy the section 3.1 wide schema (no time column).", # nolint: line_length_linter.
-      "met_assert_single_tier() found a derived index mixing more than one correction tier." # nolint: line_length_linter.
+      "met_assert_single_tier() found a derived index mixing more than one correction tier.", # nolint: line_length_linter.
+      "met_wide() was given a multi-site collection; the wide table is a per-site product." # nolint: line_length_linter.
     ),
     stringsAsFactors = FALSE
   )

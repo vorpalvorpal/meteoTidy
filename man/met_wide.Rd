@@ -13,16 +13,17 @@ met_wide(
 )
 }
 \arguments{
-\item{site}{A \code{met_site} or \code{met_sites}.}
+\item{site}{A single \code{met_site} (or a \code{met_sites} of length one) -- the
+wide table is a per-site product.}
 
 \item{window}{A list with \code{from}/\code{to} UTC POSIXct bounds.}
 
 \item{kind}{Either \code{"forecast"} or \code{"record"} (default \code{"forecast"}).}
 
-\item{variables}{Optional character vector of variable names. When
-supplied, every named variable appears as a column even if absent from
-the underlying data (an all-\code{NA} column) -- the stable section 3.1
-shape. Defaults to the variables actually present in the fetched data.}
+\item{variables}{Optional character vector of variable names. Every named
+variable appears as a column even if absent from the underlying data
+(an all-\code{NA} column) -- the stable section 3.1 shape. Defaults to the
+full section 3.1 contract set (see SCOPING section 3.1).}
 
 \item{now}{Injectable current time; see \code{.now()}.}
 }
@@ -36,6 +37,15 @@ in UTC -- wrapped as a \code{\link[=new_met_table]{new_met_table()}} carrying pr
 versions. \code{kind = "record"} reads the curated observation record
 (\code{\link[=met_record]{met_record()}}) for hindcast; \code{kind = "forecast"} reads the archived
 forecast (\code{\link[=met_forecast_archive]{met_forecast_archive()}}) for prediction.
+}
+\details{
+For \code{kind = "forecast"}, only the \strong{latest archived issuance} per
+\verb{(source, model)} is served: the archive holds every past issuance
+overlapping the window (SCOPING section 9's archive-on-every-sync
+policy), and pooling them would average the current forecast with stale
+ones. Ensemble members within that issuance are reported as the ensemble
+mean; per-member trajectories remain available via
+\code{\link[=met_forecast_archive]{met_forecast_archive()}}.
 }
 \examples{
 \dontrun{

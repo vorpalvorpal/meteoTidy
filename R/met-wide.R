@@ -13,6 +13,23 @@ NULL
 
 .met_wide_schema_version <- "1.0.0"
 
+# The exact SCOPING section 3.1 wide-contract variable set (the stable shape
+# meteoHazard consumes), in contract order. Plan 15: when `variables` is not
+# supplied, met_wide() emits exactly this set -- absent variables appear as
+# all-NA columns rather than silently narrowing the table to whatever the
+# window happened to contain.
+.met31_variables <- function() {
+  c(
+    "temperature_2m", "relative_humidity_2m", "surface_pressure",
+    "pressure_msl", "precipitation", "cloud_cover", "direct_radiation",
+    "diffuse_radiation", "wind_speed_10m", "wind_direction_10m",
+    "wind_gusts_10m", "wind_speed_80m", "wind_direction_80m",
+    "wind_speed_120m", "wind_direction_120m", "wind_speed_180m",
+    "wind_direction_180m", "boundary_layer_height",
+    "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm"
+  )
+}
+
 # The manifest has no single global "version" concept (Plan 03's calibration
 # store versions each (variable, source) pair independently) -- for a
 # multi-variable wide table, the most defensible single number is the
@@ -48,12 +65,40 @@ NULL
   wide <- base
   for (v in variables) {
     sub <- fc[fc$variable == v & is.na(fc$stat), c("valid_time", "value")]
+    # A requested variable absent from the archive window (or an entirely
+    # empty window) must yield an all-NA column, not an error --
+    # stats::aggregate() aborts on zero rows ("no rows to aggregate").
+    if (nrow(sub) == 0) {
+      wide[[v]] <- rep(NA_real_, nrow(wide))
+      next
+    }
     agg <- stats::aggregate(value ~ valid_time, data = sub, FUN = mean, na.rm = TRUE)
     matched <- agg$value[match(wide$valid_time, agg$valid_time)]
     wide[[v]] <- if (length(matched) == 0) rep(NA_real_, nrow(wide)) else matched
   }
 
   tibble::as_tibble(wide)
+}
+
+# Restrict an archived-forecast read to the LATEST issuance per (source,
+# model). met_wide(kind = "forecast") serves "the corrected forecast for
+# prediction" (SCOPING section 10): with the archive-on-every-sync policy the
+# store holds every past issuance overlapping a valid window, and pooling
+# them into one mean would average today's forecast with progressively
+# staler ones. Older issuances remain fully retrievable via
+# met_forecast_archive() -- this filter is only about what the one-call wide
+# table means.
+.latest_issuance <- function(fc) {
+  if (nrow(fc) == 0) {
+    return(fc)
+  }
+  grp_key <- paste(fc$source, fc$model, sep = "\r")
+  keep <- rep(FALSE, nrow(fc))
+  for (g in unique(grp_key)) {
+    in_grp <- grp_key == g
+    keep[in_grp] <- fc$issue_time[in_grp] == max(fc$issue_time[in_grp])
+  }
+  fc[keep, , drop = FALSE]
 }
 
 # Build `met_wide()`'s output provenance, with a real per-variable
@@ -71,7 +116,7 @@ NULL
 #  - otherwise, the highest-version manifest row's `tier` for
 #    `(variable, source)`, where `source` is the value column's own source
 #    (from the underlying long table, same lookup this function always did).
-.met_wide_provenance <- function(store_root, site_id, value_cols, long, train_overlap = 0) {
+.met_wide_provenance <- function(store_root, site_id, value_cols, long) {
   src <- if ("source" %in% names(long) && nrow(long) > 0) {
     long$source[match(value_cols, long$variable)]
   } else {
@@ -80,18 +125,32 @@ NULL
 
   manifest <- tryCatch(calib_manifest(store_root, site_id), error = function(e) NULL)
 
-  tier <- vapply(seq_along(value_cols), function(i) {
+  tier <- character(length(value_cols))
+  train_overlap <- numeric(length(value_cols))
+  for (i in seq_along(value_cols)) {
     v <- value_cols[[i]]
-    if (isTRUE(met_variable(v)$measurability_class == "model_only")) {
-      return("raw")
-    }
     s <- src[[i]]
-    if (is.null(manifest) || nrow(manifest) == 0 || is.na(s)) {
-      return("physical")
+    if (isTRUE(met_variable(v)$measurability_class == "model_only")) {
+      tier[[i]] <- "raw"
+      next
     }
-    rows <- manifest[manifest$variable == v & manifest$source == s, , drop = FALSE]
-    if (nrow(rows) == 0) "physical" else rows$tier[[which.max(rows$version)]]
-  }, character(1))
+    rows <- if (is.null(manifest) || nrow(manifest) == 0 || is.na(s)) {
+      NULL
+    } else {
+      manifest[manifest$variable == v & manifest$source == s, , drop = FALSE]
+    }
+    if (is.null(rows) || nrow(rows) == 0) {
+      tier[[i]] <- "physical"
+      next
+    }
+    current <- rows[which.max(rows$version), , drop = FALSE]
+    tier[[i]] <- current$tier[[1]]
+    # SCOPING section 3.2: provenance carries the training-overlap length.
+    # The manifest records the fit's training window; report it in hours.
+    train_overlap[[i]] <- as.numeric(difftime(current$train_end[[1]],
+                                              current$train_start[[1]],
+                                              units = "hours"))
+  }
 
   tibble::tibble(
     variable = value_cols,
@@ -110,13 +169,22 @@ NULL
 #' ([met_record()]) for hindcast; `kind = "forecast"` reads the archived
 #' forecast ([met_forecast_archive()]) for prediction.
 #'
-#' @param site A `met_site` or `met_sites`.
+#' For `kind = "forecast"`, only the **latest archived issuance** per
+#' `(source, model)` is served: the archive holds every past issuance
+#' overlapping the window (SCOPING section 9's archive-on-every-sync
+#' policy), and pooling them would average the current forecast with stale
+#' ones. Ensemble members within that issuance are reported as the ensemble
+#' mean; per-member trajectories remain available via
+#' [met_forecast_archive()].
+#'
+#' @param site A single `met_site` (or a `met_sites` of length one) -- the
+#'   wide table is a per-site product.
 #' @param window A list with `from`/`to` UTC POSIXct bounds.
 #' @param kind Either `"forecast"` or `"record"` (default `"forecast"`).
-#' @param variables Optional character vector of variable names. When
-#'   supplied, every named variable appears as a column even if absent from
-#'   the underlying data (an all-`NA` column) -- the stable section 3.1
-#'   shape. Defaults to the variables actually present in the fetched data.
+#' @param variables Optional character vector of variable names. Every named
+#'   variable appears as a column even if absent from the underlying data
+#'   (an all-`NA` column) -- the stable section 3.1 shape. Defaults to the
+#'   full section 3.1 contract set (see SCOPING section 3.1).
 #' @param now Injectable current time; see `.now()`.
 #' @return A `met_table`.
 #' @family met-table
@@ -131,17 +199,26 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
                      now = .now()) {
   kind <- rlang::arg_match(kind)
   sites <- as_met_sites(site)
+  if (length(sites@sites) != 1) {
+    abort_meteo(
+      c(
+        "met_wide() builds a per-site table; {.arg site} has {length(sites@sites)} sites.",
+        "i" = "Call it once per site (the wide table has no site_id column)."
+      ),
+      class = "multi_site_wide"
+    )
+  }
   s <- sites@sites[[1]]
+  value_cols <- variables %||% .met31_variables()
 
   if (kind == "record") {
     long <- met_record(site, variables = variables, from = window$from, to = window$to)
-    value_cols <- variables %||% unique(long$variable)
     wide <- widen_obs(long, variables = value_cols)
     names(wide)[names(wide) == "datetime_utc"] <- "time"
     wide$site_id <- NULL
   } else {
     long <- met_forecast_archive(site, valid_from = window$from, valid_to = window$to)
-    value_cols <- variables %||% unique(long$variable)
+    long <- .latest_issuance(long)
     wide <- .widen_forecast(long, variables = value_cols)
     names(wide)[names(wide) == "valid_time"] <- "time"
   }
