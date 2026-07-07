@@ -58,8 +58,11 @@ Dependencies flow downward; a plan may depend only on plans above it.
 | 14 | Read API + config & secrets | 03 | `met_history()` etc. tibble API, `met_connect()`, YAML config loader, secret resolution |
 | 15 | Classed-tibble contract + wide emitter | 01, 03, 14 | Classed `tbl_df`, `dplyr_reconstruct` methods, wide §3.1 emitter, content hashing |
 | 16 | Pipeline verbs | 04–15 | `met_sync_live/daily()`, `met_refit()`, `met_backfill()`; incremental, idempotent |
+| 17 | Correction serve-wiring, verification enrichment, refactors | 00–16 | Post-review: apply corrections at serve time, honest `met_wide` provenance, SILO daily QM in `history_daily`, forecast-source refits, consistency pass, baselines/diagnostics in `verify_run`, `as_of` history, BOM transport provenance, and three refactors |
 
-**Status:** all plans (00–16) written.
+**Status:** all plans (00–16) implemented; plan 17 written (post-implementation
+review follow-ups), its BDD acceptance specs committed as skipped
+`tests/testthat/test-plan17-*.R` blocks to un-skip per item.
 
 ---
 
