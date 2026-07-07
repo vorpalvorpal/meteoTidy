@@ -7,18 +7,31 @@
 # `tests/testthat/helper-station.R`) instead of touching the network or
 # weatherOz's internals.
 
-# Map a SILO `variable_name` (weatherOz::silo_daily_values names, e.g.
-# "max_temp", "radiation") to a meteoTidy dictionary variable. Only the
-# subset with an obvious canonical counterpart is mapped; SILO variables with
-# no dictionary equivalent (evapotranspiration variants, vapour pressure
-# deficit, etc.) are left unmapped and simply pass through unrecognised if
-# ever requested (`met_variable()` will abort, matching the "unrequested
-# variable" contract).
+# Map a SILO *returned column name* to a meteoTidy dictionary variable.
+#
+# NOTE (checked against weatherOz 3.0.0, and confirmed unchanged since
+# 2.0.2 by diffing R/query_silo_api.R across both source tarballs): the
+# `values` you *request* from get_patched_point()/get_data_drill() still use
+# weatherOz::silo_daily_values' names ("max_temp", "min_temp", "rain", ...),
+# but the *columns actually returned* in the CSV response are renamed by
+# weatherOz's internal `.query_silo_api()` before you ever see them:
+#   daily_rain -> rainfall, max_temp -> air_tmax, min_temp -> air_tmin
+# (and their "<x>_source" companions renamed the same way). radiation, mslp,
+# rh_tmax, rh_tmin, vp, vp_deficit and their *_source columns are NOT
+# renamed. This map's keys must therefore be the *response* column names,
+# not the request value codes, or `.silo_reshape_to_long()` silently drops
+# temperature/rainfall (via `intersect()`) because they never match.
+#
+# Only the subset with an obvious canonical counterpart is mapped; SILO
+# variables with no dictionary equivalent (evapotranspiration variants,
+# vapour pressure deficit, etc.) are left unmapped and simply pass through
+# unrecognised if ever requested (`met_variable()` will abort, matching the
+# "unrequested variable" contract).
 .silo_variable_map <- function() {
   c(
-    max_temp   = "temperature_2m",
-    min_temp   = "temperature_2m",
-    rain       = "precipitation",
+    air_tmax   = "temperature_2m",
+    air_tmin   = "temperature_2m",
+    rainfall   = "precipitation",
     radiation  = "direct_radiation",
     mslp       = "pressure_msl",
     rh_tmax    = "relative_humidity_2m",
@@ -28,9 +41,9 @@
 
 .silo_variable_unit <- function() {
   c(
-    max_temp   = "degC",
-    min_temp   = "degC",
-    rain       = "mm",
+    air_tmax   = "degC",
+    air_tmin   = "degC",
+    rainfall   = "mm",
     radiation  = "MJ/m2",
     mslp       = "hPa",
     rh_tmax    = "%",
@@ -60,6 +73,25 @@
 #'   `value_quality`.
 #' @keywords internal
 #' @noRd
+# weatherOz (>= 3.0.0) check (Plan 06 / audit item 4): `get_patched_point()`
+# and `get_data_drill()` both still exist under these names in 3.0.0 and take
+# the same arguments this seam passes (`station_code`/`longitude`+`latitude`,
+# `start_date`, `end_date`, `values`, `api_key`); neither was among the
+# functions removed in 3.0.0 (only `get_ag_bulletin()`/`parse_ag_bulletin()`,
+# BOM ag-bulletin, were removed) and the "breaking DPIRD column restructure"
+# in 3.0.0's NEWS.md is scoped to `get_dpird_summaries()` wind columns, not
+# SILO. This was verified by installing weatherOz 3.0.0 from CRAN source
+# (no matching macOS binary existed yet at check time), reading its NEWS.md
+# and Rd docs, and diffing 3.0.0's R/query_silo_api.R, R/get_patched_point.R,
+# R/get_data_drill.R against the 2.0.2 CRAN source: identical logic, so this
+# was NOT re-verified live against the real SILO API/network this round.
+# Separately (and true in *both* 2.0.2 and 3.0.0, not a 3.0.0 regression):
+# the columns weatherOz actually returns are NOT the request-side value
+# codes ("max_temp"/"min_temp"/"daily_rain") — `.query_silo_api()` renames
+# them in the response to "air_tmax"/"air_tmin"/"rainfall" (and their
+# "<x>_source" companions) before returning; radiation/mslp/rh_tmax/rh_tmin/
+# vp/vp_deficit and their *_source columns are left as-is. `.silo_variable_map()`
+# below is keyed on the actual returned column names for this reason.
 .weatheroz_get <- function(query, dataset, api_key, ...) {
   raw <- if (identical(dataset, "patched_point")) {
     weatherOz::get_patched_point(
@@ -89,9 +121,11 @@
 }
 
 # weatherOz's get_patched_point()/get_data_drill() return one row per date
-# with one column per requested value (wide, weatherOz's own variable
-# codes). Reshape to the long shape `.weatheroz_get()` documents/returns
-# (one row per station/date/variable), matching `make_silo_frame()`.
+# with one column per returned value (wide, weatherOz's own *response*
+# column names -- see the note above `.weatheroz_get()`: these are not
+# always the same as the request-side value codes). Reshape to the long
+# shape `.weatheroz_get()` documents/returns (one row per
+# station/date/variable), matching `make_silo_frame()`.
 .silo_reshape_to_long <- function(raw) {
   value_cols <- intersect(names(.silo_variable_map()), names(raw))
 

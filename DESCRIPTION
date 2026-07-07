@@ -37,7 +37,7 @@ Imports:
     tibble,
     units,
     vctrs,
-    weatherOz (>= 2.0.2),
+    weatherOz (>= 3.0.0),
     withr,
     worldmet (>= 1.0.0),
     xml2,
