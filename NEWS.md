@@ -1,5 +1,11 @@
 # meteoTidy (development version)
 
+- `source_ecmwf()` now reads GRIB2 **only through eccodes** (terra/GDAL dropped).
+  eccodes reads ECMWF-native `shortName`/`step`/`perturbationNumber`/`units` and
+  decodes CCSDS natively — removing the GDAL-version metadata drift that made the
+  old path fragile. **eccodes is now required for `source_ecmwf()`** (run
+  `ecmwf_install_eccodes()`, or install `libeccodes-tools`); `terra` is no longer
+  a dependency.
 - Gap-fill now **derives thermodynamically-coupled variables from co-observed
   inputs** (relative humidity ↔ dewpoint ↔ temperature) exactly, in a
   derivation tier that runs **before** the donor tier — so an exact physical

@@ -33,12 +33,6 @@ NULL
 #    `.../ifs/0p25/enfo/20260702000000-24h-enfo-ef.grib2`); URL construction
 #    is per-step accordingly.
 
-# Whether terra is installed. A separate, mockable function (rather than
-# inlining `requireNamespace()` at call sites) so tests can simulate terra's
-# absence via `testthat::local_mocked_bindings(.have_terra = function() FALSE)`
-# without actually needing terra to be absent from the test environment.
-.have_terra <- function() requireNamespace("terra", quietly = TRUE)
-
 # Map a dictionary variable name to the GRIB `param` short name(s) that
 # provide it (the ECMWF Open Data index's `param` field / this file's
 # `.grib_element_to_param()` translation of GDAL's `GRIB_ELEMENT`). Wind
@@ -56,7 +50,7 @@ NULL
 #' Recombine ECMWF 10u/10v GRIB bands into canonical wind speed/direction
 #'
 #' GRIB never carries wind speed/direction directly, only the u/v vector
-#' components (`"10u"`/`"10v"` GRIB `param` short names, `grib_field_table()`,
+#' components (`"10u"`/`"10v"` GRIB `param` short names, `grib_point_table()`,
 #' R/grib-read.R). This pairs the `"10u"`/`"10v"` rows of `field_tbl` on
 #' `(step, member)` and derives the canonical `wind_speed_10m`
 #' (`hypot(u, v)`) and `wind_direction_10m` rows, reusing `uv_to_dir()`
@@ -64,7 +58,7 @@ NULL
 #' formula, not re-derived here. `10u`/`10v` are already SI (m/s), so no unit
 #' conversion is needed for either derived variable.
 #'
-#' @param field_tbl A `grib_field_table()`-shaped tibble: `band`, `param`,
+#' @param field_tbl A `grib_point_table()`-shaped tibble: `band`, `param`,
 #'   `unit`, `step`, `member`.
 #' @param values Numeric vector, the per-band extracted value, aligned to
 #'   `field_tbl$band` (`values[i]` is the value of `field_tbl[i, ]`'s band).
@@ -99,10 +93,11 @@ NULL
 #' An ECMWF Open Data acquisition adapter
 #'
 #' `source_ecmwf()` builds a [met_adapter()] that fetches ECMWF's Open Data
-#' ensemble forecast as GRIB2, via `terra`/GDAL's GRIB driver
-#' (`R/grib-read.R`). `terra` is a **Suggests**-only dependency: every fetch
-#' path checks for it first (see the internal `.have_terra()`) and aborts a
-#' guided `"terra_required"` error -- pointing at
+#' ensemble forecast as GRIB2, read via **eccodes** (ECMWF's own GRIB library;
+#' `R/grib-read.R`). eccodes is a **hard requirement** for this adapter: every
+#' fetch path checks for it first (see the internal `.have_eccodes()`) and
+#' aborts a guided `"eccodes_required"` error -- pointing at
+#' [ecmwf_install_eccodes()] to provision it, or
 #' `source_openmeteo(product = "seasonal")` as the no-GRIB degradation path
 #' (SCOPING §5.2) -- if it is unavailable.
 #'
@@ -263,8 +258,8 @@ source_ecmwf <- S7::new_class(
 # and-concatenate loop, called unmocked through the real `.http_get()` seam,
 # correctly reconstructs a valid multi-message GRIB2 file from two
 # independently range-downloaded messages (byte counts matched the index's
-# `_length` exactly for each chunk, and the reconstructed local file opened
-# via `grib_open()`/`grib_field_table()` with the right `param`/`step`/
+# `_length` exactly for each chunk, and the reconstructed local file read
+# via `grib_point_table()` with the right `param`/`step`/
 # `member` metadata for both messages). A real ECMWF HTTP 206 response to a
 # single-range request returns exactly that byte span (never the whole
 # file), so concatenating N such chunks in message order reconstructs the
@@ -297,14 +292,14 @@ source_ecmwf <- S7::new_class(
 S7::method(fetch_forecast, source_ecmwf) <- function(
   adapter, site, variables, issue_window, now = .now()
 ) {
-  if (!.have_terra()) {
+  if (!.have_eccodes()) {
     abort_meteo(
       c(
-        "{.pkg terra} is required to read ECMWF Open Data GRIB2 files, but is not installed.", # nolint: line_length_linter.
-        "i" = "Install {.pkg terra} (which pulls in GDAL) to use {.fn source_ecmwf}.",
+        "eccodes is required to read ECMWF Open Data GRIB2 files, but is not available.", # nolint: line_length_linter.
+        "i" = "Run {.fn ecmwf_install_eccodes} to provision it (a one-time, cached step).", # nolint: line_length_linter.
         "i" = "Alternatively, use {.code source_openmeteo(product = \"seasonal\")} for a no-GRIB seasonal splice." # nolint: line_length_linter.
       ),
-      class = "terra_required"
+      class = "eccodes_required"
     )
   }
 
@@ -336,65 +331,16 @@ S7::method(fetch_forecast, source_ecmwf) <- function(
   }
 
   local_path <- .ecmwf_download_messages(base_url, messages)
-  rast <- grib_open(local_path)
   coords <- site_coords(site)
   lat <- as.numeric(units::drop_units(coords$latitude))
   lon <- as.numeric(units::drop_units(coords$longitude))
 
-  field_tbl <- grib_field_table(rast) # metadata-only; never needs CCSDS decode
-
-  # Attempting the real point extraction on the just-downloaded file is the
-  # only reliable CCSDS-decode capability check (see R/grib-read.R's
-  # `.grib_check_ccsds_support()` header note): it fails, on a build without
-  # libaec, exactly here. When it does, fall back to the eccodes CLI decode
-  # path (R/ecmwf-eccodes.R) if provisioned/available; otherwise re-abort
-  # with guidance pointing at both remediation options.
-  # A build without libaec support fails at *value read* time (see
-  # R/grib-read.R's `.grib_check_ccsds_support()` header note) -- this
-  # manifests as either an R error or (GDAL's own C-level complaint,
-  # observed live) a warning that a subsequent read then errors on; both are
-  # caught the same way, so a real user never sees GDAL's raw "Out of
-  # memory"-style noise on a run that goes on to succeed via the fallback.
-  ccsds_fallback <- function(cnd) {
-    if (.have_eccodes()) {
-      list(method = "eccodes")
-    } else {
-      abort_meteo(
-        c(
-          "GDAL could not read a CCSDS/AEC-compressed ECMWF GRIB2 message, and no eccodes fallback is available.", # nolint: line_length_linter.
-          "x" = "This usually means the installed GDAL build lacks libaec support (OSGeo/gdal#8108).", # nolint: line_length_linter.
-          "i" = "Run {.fn ecmwf_install_eccodes} to provision a CLI-only decode fallback, or use {.code source_openmeteo(product = \"seasonal\")} as a no-GRIB alternative." # nolint: line_length_linter.
-        ),
-        class = "grib_ccsds_unsupported"
-      )
-    }
-  }
-  decode <- withCallingHandlers(
-    tryCatch(
-      list(method = "terra", vals = grib_extract_point(rast, lat = lat, lon = lon)),
-      error = ccsds_fallback
-    ),
-    warning = function(w) invokeRestart("muffleWarning")
-  )
-
-  if (identical(decode$method, "eccodes")) {
-    ecc <- .eccodes_extract_point(local_path, lat = lat, lon = lon)
-    # Positional alignment (band i <-> message i) is the same convention
-    # grib_field_table()/grib_extract_point() already rely on; member is
-    # cross-checked (when both sides know it) as a belt-and-braces guard
-    # against a silent misalignment corrupting values.
-    known <- !is.na(field_tbl$member) & !is.na(ecc$member)
-    if (any(known) && !identical(field_tbl$member[known], ecc$member[known])) {
-      abort_meteo(
-        "eccodes' message order did not match GDAL's band order for {.file {local_path}}.", # nolint: line_length_linter.
-        class = "eccodes_alignment_mismatch"
-      )
-    }
-    field_tbl$unit <- vapply(ecc$unit, .eccodes_unit_to_udunits, character(1))
-    field_tbl$value_raw <- ecc$value[seq_len(nrow(field_tbl))]
-  } else {
-    field_tbl$value_raw <- decode$vals[seq_len(nrow(field_tbl))]
-  }
+  # One eccodes call decodes CCSDS/AEC and reports param/unit/step/member plus
+  # the nearest-gridpoint value per message (R/grib-read.R). `value_raw` is the
+  # value in eccodes' native unit (e.g. Kelvin), converted per row below via
+  # to_canonical(value, unit, variable).
+  field_tbl <- grib_point_table(local_path, lat = lat, lon = lon)
+  field_tbl$value_raw <- field_tbl$value
 
   # Direct-param variables (temperature_2m via "2t"): a single GRIB param
   # maps straight to the canonical variable.

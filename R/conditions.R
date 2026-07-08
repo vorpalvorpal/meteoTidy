@@ -161,10 +161,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_bom_all_transports_failed",
       "meteoTidy_error_bom_geohash_unavailable",
       "meteoTidy_error_no_forecast_aux_support",
-      # Plan 08 — ECMWF adapter (R/grib-read.R, R/source-ecmwf.R)
-      "meteoTidy_error_terra_required",
-      "meteoTidy_error_grib_ccsds_unsupported",
-      # Post-audit — eccodes CLI decode fallback (R/ecmwf-eccodes.R)
+      # Plan 08 / 18 — ECMWF adapter (R/grib-read.R, R/source-ecmwf.R)
+      # Post-audit — eccodes CLI GRIB decode (R/ecmwf-eccodes.R, R/grib-read.R)
       "meteoTidy_error_eccodes_unsupported_platform",
       "meteoTidy_error_eccodes_install_failed",
       "meteoTidy_error_eccodes_required",
@@ -246,8 +244,6 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "ladder_fetch() exhausted every eligible BOM transport rung for the requested product.",
       "resolve_station() needs a BOM geohash but none is cached and allow_web_api = FALSE.",
       "fetch_forecast_aux() was called on an adapter that does not support forecast_aux retrieval.", # nolint: line_length_linter.
-      "source_ecmwf()'s fetch_forecast() was called but the terra package is not installed.",
-      "The installed GDAL build could not read a CCSDS/AEC-compressed ECMWF GRIB2 message (likely missing libaec support).", # nolint: line_length_linter.
       "ecmwf_install_eccodes() has no known micromamba build for the running platform.",
       "micromamba failed to download or failed to install eccodes.",
       "The eccodes CLI decode fallback was needed but grib_ls could not be found.", # nolint: line_length_linter.

@@ -30,114 +30,60 @@ describe("ecmwf_index_parse()", {
   })
 })
 
-describe("fetch_forecast() end-to-end", {
-  it("yields canonical rows, or aborts grib_ccsds_unsupported if this build can't decode CCSDS", {
-    skip_unless_grib_ready()
-    # The genuine decode-and-demux path: needs a GDAL that both decodes the
-    # fixture's CCSDS pixels AND exposes its PDS metadata in the recorded
-    # format (member demux reads the assembled template values). CI's GDAL
-    # differs in the latter (SCOPING §13 post-audit addendum), so the fixture's
-    # members come back empty there -- skip on CI rather than fail; the dev
-    # build (the recorded environment) still exercises the real path, and the
-    # eccodes-fallback wiring below is covered deterministically via mocks.
-    testthat::skip_on_ci()
+describe("fetch_forecast() end-to-end (eccodes)", {
+  it("yields canonical rows from the eccodes GRIB read, on every platform", {
+    # Deterministic: mock the grib_ls-shell seam with canned JSON for the
+    # committed fixture, so the whole read path runs with no eccodes install
+    # and no GDAL. This is the contract that was GDAL-version-fragile under
+    # terra; eccodes makes it version-independent.
+    site <- make_test_site()
+    adapter <- source_ecmwf()
+    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
+                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
+    testthat::local_mocked_bindings(
+      .http_get = mock_ecmwf_http_get(),
+      .have_eccodes = function() TRUE,
+      .grib_ls_json = function(path, lat, lon) ecmwf_grib_ls_json()
+    )
+    result <- fetch_forecast(adapter, site, "temperature_2m", win,
+                             now = as.POSIXct("2026-01-01", tz = "UTC"))
+    expect_canonical_forecast(result)
+    expect_type(result$member, "integer")
+    expect_setequal(result$member, c(1L, 2L, 3L))
+    expect_true(all(result$model == "ifs_enfo"))
+    # eccodes reports native Kelvin (~295 K); to_canonical() -> degC (~22),
+    # a plausible surface temperature, not still Kelvin-scale.
+    expect_true(all(result$value > 10 & result$value < 30))
+    expect_true(all(result$valid_time > result$issue_time))
+  })
+
+  it("aborts eccodes_required, naming ecmwf_install_eccodes(), when eccodes is absent", {
+    site <- make_test_site()
+    adapter <- source_ecmwf()
+    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
+                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
+    testthat::local_mocked_bindings(.have_eccodes = function() FALSE)
+    err <- expect_error(
+      fetch_forecast(adapter, site, "temperature_2m", win,
+                     now = as.POSIXct("2026-01-01", tz = "UTC")),
+      class = "meteoTidy_error_eccodes_required"
+    )
+    expect_match(conditionMessage(err), "ecmwf_install_eccodes", fixed = TRUE)
+    expect_match(conditionMessage(err), "seasonal", ignore.case = TRUE)
+  })
+
+  it("reads the committed CCSDS fixture end-to-end with real eccodes", {
+    skip_unless_eccodes_ready()
     site <- make_test_site()
     adapter <- source_ecmwf()
     win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
                 to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
     testthat::local_mocked_bindings(.http_get = mock_ecmwf_http_get())
-    result <- tryCatch(
-      fetch_forecast(adapter, site, "temperature_2m", win,
-                     now = as.POSIXct("2026-01-01", tz = "UTC")),
-      meteoTidy_error_grib_ccsds_unsupported = function(e) e
-    )
-    if (inherits(result, "condition")) {
-      expect_match(conditionMessage(result), "seasonal", ignore.case = TRUE)
-    } else {
-      expect_canonical_forecast(result)
-      expect_type(result$member, "integer")
-      expect_setequal(result$member, c(1L, 2L, 3L))
-      expect_true(all(result$model == "ifs_enfo"))
-      # GDAL already decodes 2t into Celsius (see R/grib-read.R); canonical is
-      # degC → plausibly a small surface temperature, not still Kelvin-scale.
-      expect_true(all(abs(result$value) < 60))
-      # valid_time should be issue_time plus the forecast step
-      expect_true(all(result$valid_time > result$issue_time))
-    }
-  })
-})
-
-describe("eccodes fallback wiring (post-audit item 5)", {
-  # Deterministic, mocked coverage of the fallback branch in fetch_forecast()
-  # -- independent of whatever eccodes happens to be on this machine's PATH
-  # (see test-ecmwf-eccodes.R for the real, gated end-to-end coverage).
-  it("falls back to eccodes when terra can't decode CCSDS and eccodes is available", {
-    skip_unless_grib_ready() # still needs terra for grib_open()/grib_field_table()
-    site <- make_test_site()
-    adapter <- source_ecmwf()
-    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
-                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
-    testthat::local_mocked_bindings(
-      .http_get = mock_ecmwf_http_get(),
-      # Mock the band-metadata table too, so this deterministic fallback-wiring
-      # test does not depend on the running GDAL build exposing GRIB PDS
-      # metadata in the recorded format (member demux reads it; CI's GDAL
-      # exposes it differently -- SCOPING §13 addendum). The values below are
-      # exactly what grib_field_table() decodes from the fixture on the dev
-      # build; mocking keeps this branch covered on every platform.
-      grib_field_table = function(rast) {
-        tibble::tibble(band = 1:3, param = "2t", unit = "degC", step = "24",
-                       member = c(1L, 2L, 3L))
-      },
-      grib_extract_point = function(...) stop("simulated CCSDS decode failure"),
-      .have_eccodes = function() TRUE,
-      .eccodes_extract_point = function(path, lat, lon) {
-        tibble::tibble(member = c(1L, 2L, 3L), value = c(295.4, 295.9, 294.8), unit = "K")
-      }
-    )
     result <- fetch_forecast(adapter, site, "temperature_2m", win,
                              now = as.POSIXct("2026-01-01", tz = "UTC"))
     expect_canonical_forecast(result)
     expect_setequal(result$member, c(1L, 2L, 3L))
-    # K -> canonical degC via to_canonical(), not still Kelvin-scale.
-    expect_true(all(result$value > 15 & result$value < 25))
-  })
-
-  it("aborts grib_ccsds_unsupported, mentioning ecmwf_install_eccodes(), when eccodes isn't available either", { # nolint: line_length_linter.
-    skip_unless_grib_ready()
-    site <- make_test_site()
-    adapter <- source_ecmwf()
-    win <- list(from = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
-                to = as.POSIXct("2026-01-02 00:00", tz = "UTC"))
-    testthat::local_mocked_bindings(
-      .http_get = mock_ecmwf_http_get(),
-      grib_extract_point = function(...) stop("simulated CCSDS decode failure"),
-      .have_eccodes = function() FALSE
-    )
-    err <- expect_error(
-      fetch_forecast(adapter, site, "temperature_2m", win,
-                     now = as.POSIXct("2026-01-01", tz = "UTC")),
-      class = "meteoTidy_error_grib_ccsds_unsupported"
-    )
-    expect_match(conditionMessage(err), "ecmwf_install_eccodes", fixed = TRUE)
-    expect_match(conditionMessage(err), "seasonal", ignore.case = TRUE)
-  })
-})
-
-describe("graceful degradation when terra is absent", {
-  it("aborts terra_required pointing at the Open-Meteo seasonal splice", {
-    site <- make_test_site()
-    adapter <- source_ecmwf()
-    win <- list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                to = as.POSIXct("2026-01-02", tz = "UTC"))
-    # simulate terra absence via the guard seam
-    testthat::local_mocked_bindings(.have_terra = function() FALSE)
-    err <- expect_error(
-      fetch_forecast(adapter, site, "temperature_2m", win,
-                     now = as.POSIXct("2026-01-01", tz = "UTC")),
-      class = "meteoTidy_error_terra_required"
-    )
-    expect_match(conditionMessage(err), "seasonal", ignore.case = TRUE)
+    expect_true(all(result$value > -60 & result$value < 60)) # canonical degC
   })
 })
 

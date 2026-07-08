@@ -2,7 +2,7 @@
 % Please edit documentation in R/ecmwf-eccodes.R
 \name{ecmwf_install_eccodes}
 \alias{ecmwf_install_eccodes}
-\title{Provision a CLI-only eccodes install for the ECMWF CCSDS decode fallback}
+\title{Provision a CLI-only eccodes install for reading ECMWF GRIB2}
 \usage{
 ecmwf_install_eccodes(force = FALSE)
 }
@@ -15,15 +15,17 @@ Invisibly, \code{TRUE} if a usable eccodes install is available after
 this call (whether newly provisioned or already present).
 }
 \description{
-Many GDAL builds (including the CRAN macOS binary \code{terra} bundles) cannot
-decode the CCSDS/AEC-compressed pixel data real ECMWF Open Data GRIB2
-messages use (\code{grib_ccsds_unsupported}, SCOPING §13/§14). This function
-provisions a small, self-contained, CLI-only decode fallback so
-\code{\link[=source_ecmwf]{source_ecmwf()}} keeps working on such a build: it downloads
-\code{micromamba} (a tiny, dependency-free package manager; downloaded once,
-cached) and uses it to install the plain \code{eccodes} conda-forge package
+\code{\link[=source_ecmwf]{source_ecmwf()}} reads ECMWF Open Data GRIB2 through \strong{eccodes} (ECMWF's own
+library; plan 18), which decodes the CCSDS/AEC-compressed messages ECMWF ships
+and reports their native \code{shortName}/\code{step}/\code{perturbationNumber}/\code{units}
+directly. eccodes is a hard requirement for that adapter but an external
+system binary, not an R package -- so this function provisions a small,
+self-contained, CLI-only install (no other part of the package needs it): it
+downloads \code{micromamba} (a tiny, dependency-free package manager; downloaded
+once, cached) and uses it to install the plain \code{eccodes} conda-forge package
 (the C library + CLI tools, no Python) into a per-user cache directory
-(\code{tools::R_user_dir("meteoTidy", "cache")}).
+(\code{tools::R_user_dir("meteoTidy", "cache")}). If a usable \code{grib_ls} is already
+on \code{PATH} (e.g. an OS package like \code{libeccodes-tools}), this is a no-op.
 }
 \details{
 This is \strong{never called automatically}: a normal package load or

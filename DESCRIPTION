@@ -51,12 +51,12 @@ Suggests:
     knitr,
     lintr,
     rmarkdown,
-    terra,
     testthat (>= 3.0.0)
-SystemRequirements: eccodes (optional; https://confluence.ecmwf.int/display/ECC
-    -- only needed as a CLI-only fallback CCSDS/AEC decoder for source_ecmwf()
-    on a GDAL build without libaec support; see ecmwf_install_eccodes(), which
-    provisions it via micromamba/conda-forge if not already on PATH)
+SystemRequirements: eccodes (https://confluence.ecmwf.int/display/ECC --
+    required for source_ecmwf() only: the ECMWF Open Data GRIB2 read path is
+    eccodes-only. Not needed for any other part of the package. See
+    ecmwf_install_eccodes(), which provisions the CLI via micromamba/conda-forge
+    if grib_ls is not already on PATH)
 VignetteBuilder: knitr
 Collate:
     'adapter-mapping.R'
@@ -87,6 +87,7 @@ Collate:
     'ecmwf-eccodes.R'
     'ecmwf-index.R'
     'enums.R'
+    'fill-derive.R'
     'fill-tiers.R'
     'fill-treatments.R'
     'fill.R'

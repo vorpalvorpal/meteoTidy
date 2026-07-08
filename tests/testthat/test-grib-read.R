@@ -1,73 +1,80 @@
-# Plan 08 — the GRIB read spike (SCOPING §13/§14 acceptance gate).
+# Plan 18 Part A — the eccodes-only GRIB read seam (supersedes the terra/GDAL
+# read path). `grib_point_table()` reads ECMWF-native identifiers (shortName,
+# step, perturbationNumber, units) via one `grib_ls -j -p ... -l lat,lon,1`
+# call, so the field table is deterministic and GDAL-version-independent -- no
+# NCEP-table translation to drift, and no `skip_on_ci()` for GDAL-metadata
+# variance.
 #
-# The fixture is a genuine excerpt of a real ECMWF Open Data GRIB2 file (see
-# helper-ecmwf.R for provenance). Opening a file and reading its band
-# *metadata* never requires decoding pixel data, so `grib_open()` and
-# `grib_field_table()` run on any GDAL build with the GRIB driver. Actually
-# decoding pixel values (`grib_extract_point()`, and downstream the guard
-# `.grib_check_ccsds_support()`) needs a build with libaec support for
-# CCSDS/AEC decoding, which is not universal (OSGeo/gdal#8108) -- those tests
-# are gated on `ecmwf_ccsds_supported()` and skip cleanly, rather than fail,
-# when this build can't decode it.
+# The committed fixture (small.grib2) is a genuine CCSDS-compressed ECMWF Open
+# Data excerpt (3 `enfo` 2t messages, step 24h, members 1-3; see helper-ecmwf.R
+# for provenance). eccodes always decodes CCSDS, so the only gate on the real
+# end-to-end read is whether eccodes (grib_ls) is installed in this
+# environment (skip_unless_eccodes_ready()); the contract itself is pinned
+# deterministically against canned `grib_ls -j` JSON on every platform.
 
-describe("grib_open()", {
-  it("opens the committed small.grib2 as a SpatRaster with the expected bands", {
-    skip_unless_grib_ready()
-    rast <- grib_open(ecmwf_grib_path())
-    expect_s4_class(rast, "SpatRaster")
-    expect_equal(terra::nlyr(rast), 3)
+describe(".grib_point_table_parse()", {
+  it("parses grib_ls -j JSON into the documented field table", {
+    tbl <- meteoTidy:::.grib_point_table_parse(ecmwf_grib_ls_json())
+    expect_true(all(c("band", "param", "unit", "step", "member", "value") %in%
+                      names(tbl)))
+    expect_equal(nrow(tbl), 3)
+    expect_equal(tbl$band, 1:3)
+    expect_true(all(tbl$param == "2t"))
+    expect_true(all(tbl$unit == "K"))
+    expect_true(all(tbl$step == "24"))
+    expect_type(tbl$member, "integer")
+    expect_setequal(tbl$member, c(1L, 2L, 3L))
+    expect_type(tbl$value, "double")
+    expect_true(all(is.finite(tbl$value)))
+  })
+
+  it("normalises a step reported as '24h' to plain hours '24'", {
+    json <- gsub('"step":"24"', '"step":"24h"', ecmwf_grib_ls_json(), fixed = TRUE)
+    tbl <- meteoTidy:::.grib_point_table_parse(json)
+    expect_true(all(tbl$step == "24"))
+  })
+
+  it("maps eccodes' native unit through .eccodes_unit_to_udunits", {
+    json <- gsub('"unit":"K"', '"unit":"m s**-1"', ecmwf_grib_ls_json(), fixed = TRUE)
+    tbl <- meteoTidy:::.grib_point_table_parse(json)
+    expect_true(all(tbl$unit == "m s-1"))
   })
 })
 
-describe("grib_extract_point()", {
-  it("returns finite, physically plausible values at an in-grid coordinate", {
-    skip_unless_grib_ready()
-    testthat::skip_if_not(ecmwf_ccsds_supported(),
-                          "this GDAL build cannot decode CCSDS/AEC-compressed GRIB2")
-    rast <- grib_open(ecmwf_grib_path())
-    vals <- grib_extract_point(rast, lat = -34.75, lon = 148.20)
-    expect_true(all(is.finite(vals)))
-    # nearest-gridpoint (documented, not bilinear) — a coarse 0.25° cell.
-    # Values are already Celsius (GDAL auto-converts ECMWF's Kelvin fields;
-    # see R/grib-read.R), so a plausible surface temperature is well within
-    # +/- 60.
-    expect_true(all(abs(vals) < 60))
+describe("grib_point_table()", {
+  it("yields the documented contract from the grib_ls seam on every platform", {
+    # Mock only the grib_ls-shell seam: the real parse runs, so this pins the
+    # param/unit/step/member/value contract with no eccodes, no GDAL, no skip.
+    # This is the contract that was GDAL-version-fragile under terra; it must
+    # now be version-independent.
+    testthat::local_mocked_bindings(
+      .grib_ls_json = function(path, lat, lon) ecmwf_grib_ls_json()
+    )
+    tbl <- grib_point_table("ignored.grib2", lat = -34.75, lon = 148.20)
+    expect_true(all(tbl$param == "2t"))
+    expect_true(all(tbl$unit == "K"))
+    expect_true(all(tbl$step == "24"))
+    expect_setequal(tbl$member, c(1L, 2L, 3L))
+    expect_true(all(is.finite(tbl$value)))
   })
-})
 
-describe("grib_field_table()", {
-  it("decodes param/unit/step and demuxes member from the PDS template", {
-    skip_unless_grib_ready()
-    # GDAL surfaces GRIB per-band PDS metadata (GRIB_ELEMENT, the assembled
-    # template values grib_field_table() reads for param/member) differently
-    # across versions -- the drift SCOPING §13's post-audit addendum records.
-    # This assertion pins the values decoded from the fixture on the recorded
-    # dev GDAL build; on CI's (uncontrolled, newer) GDAL the same fixture
-    # decodes to different metadata strings, so skip cleanly there rather than
-    # fail (the "skip, never fail, when the environment can't support it" rule
-    # the other GRIB guards in helper-ecmwf.R already follow).
-    testthat::skip_on_ci()
-    tbl <- grib_field_table(grib_open(ecmwf_grib_path()))
-    expect_true(all(c("band", "param", "unit", "step", "member") %in% names(tbl)))
+  it("aborts eccodes_required when grib_ls cannot be resolved", {
+    testthat::local_mocked_bindings(.eccodes_grib_ls_path = function() NA_character_)
+    expect_error(
+      grib_point_table(ecmwf_grib_path(), lat = 0, lon = 0),
+      class = "meteoTidy_error_eccodes_required"
+    )
+  })
+
+  it("decodes the committed CCSDS fixture into real values (real eccodes)", {
+    skip_unless_eccodes_ready()
+    tbl <- grib_point_table(ecmwf_grib_path(), lat = -34.75, lon = 148.20)
     expect_equal(nrow(tbl), 3)
     expect_true(all(tbl$param == "2t"))
-    expect_true(all(tbl$unit == "degC"))
-    expect_true(all(tbl$step == "24"))
-    # the fixture's 3 messages are distinct perturbed members (1, 2, 3); the
-    # real `enfo` feed ships no separate control/member-0 (verified live,
-    # 2026-07-06 — see plans/08-acquisition-ecmwf.md).
+    expect_true(all(tbl$unit == "K"))
     expect_setequal(tbl$member, c(1L, 2L, 3L))
-  })
-})
-
-describe(".grib_check_ccsds_support()", {
-  it("matches this environment's actual CCSDS decode capability", {
-    skip_unless_grib_ready()
-    if (ecmwf_ccsds_supported()) {
-      expect_no_error(.grib_check_ccsds_support(ecmwf_grib_path()))
-    } else {
-      expect_error(.grib_check_ccsds_support(ecmwf_grib_path()),
-                   class = "meteoTidy_error_grib_ccsds_unsupported")
-    }
+    # plausible surface temperature in Kelvin -- eccodes reports the file's
+    # native unit, and does not auto-convert to Celsius the way GDAL did.
+    expect_true(all(tbl$value > 250 & tbl$value < 320))
   })
 })

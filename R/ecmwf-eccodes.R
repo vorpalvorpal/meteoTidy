@@ -44,7 +44,7 @@ NULL
 # experience during this investigation, an *unpinned* system package manager
 # is exactly what caused the original problem this fallback exists to route
 # around (Homebrew's current `gdal` pulled in a newer GDAL than the CRAN
-# binary's, which broke `terra::meta()`'s band-metadata parsing even after
+# binary's, which broke terra/GDAL's band-metadata parsing even after
 # fixing the CCSDS decode). `micromamba` + a pinned conda-forge channel gives
 # a reproducible, fully self-contained install, identical across macOS,
 # Linux, and Windows, that lives in one deletable folder.
@@ -217,17 +217,19 @@ NULL
   invisible(env_dir)
 }
 
-#' Provision a CLI-only eccodes install for the ECMWF CCSDS decode fallback
+#' Provision a CLI-only eccodes install for reading ECMWF GRIB2
 #'
-#' Many GDAL builds (including the CRAN macOS binary `terra` bundles) cannot
-#' decode the CCSDS/AEC-compressed pixel data real ECMWF Open Data GRIB2
-#' messages use (`grib_ccsds_unsupported`, SCOPING §13/§14). This function
-#' provisions a small, self-contained, CLI-only decode fallback so
-#' [source_ecmwf()] keeps working on such a build: it downloads
-#' `micromamba` (a tiny, dependency-free package manager; downloaded once,
-#' cached) and uses it to install the plain `eccodes` conda-forge package
+#' [source_ecmwf()] reads ECMWF Open Data GRIB2 through **eccodes** (ECMWF's own
+#' library; plan 18), which decodes the CCSDS/AEC-compressed messages ECMWF ships
+#' and reports their native `shortName`/`step`/`perturbationNumber`/`units`
+#' directly. eccodes is a hard requirement for that adapter but an external
+#' system binary, not an R package -- so this function provisions a small,
+#' self-contained, CLI-only install (no other part of the package needs it): it
+#' downloads `micromamba` (a tiny, dependency-free package manager; downloaded
+#' once, cached) and uses it to install the plain `eccodes` conda-forge package
 #' (the C library + CLI tools, no Python) into a per-user cache directory
-#' (`tools::R_user_dir("meteoTidy", "cache")`).
+#' (`tools::R_user_dir("meteoTidy", "cache")`). If a usable `grib_ls` is already
+#' on `PATH` (e.g. an OS package like `libeccodes-tools`), this is a no-op.
 #'
 #' This is **never called automatically**: a normal package load or
 #' `fetch_forecast()` call never touches the network for this. Call it once

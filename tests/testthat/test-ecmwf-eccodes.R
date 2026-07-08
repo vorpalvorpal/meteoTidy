@@ -83,30 +83,25 @@ describe("ecmwf_install_eccodes()", {
 })
 
 describe("live end-to-end (real eccodes, if provisioned in this environment)", {
-  it("decodes the real committed CCSDS fixture -- the exact 'terra can't, eccodes can' case this fallback exists for", { # nolint: line_length_linter.
+  it("decodes the real committed CCSDS fixture via eccodes (the whole GRIB read path)", {
     skip_unless_eccodes_ready()
-    skip_unless_grib_ready() # only needed for grib_field_table()'s member metadata below
 
     ecc <- .eccodes_extract_point(ecmwf_grib_path(), lat = -34.75, lon = 148.20)
     expect_equal(nrow(ecc), 3)
     expect_setequal(ecc$member, c(1L, 2L, 3L))
     expect_true(all(ecc$unit == "K"))
-    # Plausible surface temperature in Kelvin (not still whatever GDAL would
-    # have auto-converted it to -- eccodes reports the file's native unit).
+    # Plausible surface temperature in Kelvin -- eccodes reports the file's
+    # native unit (not auto-converted, the way GDAL's GRIB driver was).
     expect_true(all(ecc$value > 250 & ecc$value < 320))
 
-    field_tbl <- grib_field_table(grib_open(ecmwf_grib_path()))
-    expect_setequal(field_tbl$member, ecc$member) # same messages, decoded two ways
-
-    if (ecmwf_ccsds_supported()) {
-      # Bonus cross-check when this environment's terra/GDAL *can* also
-      # decode CCSDS: independent decoders should agree, aligned by member
-      # (not file position/value order).
-      terra_vals <- grib_extract_point(grib_open(ecmwf_grib_path()),
-                                       lat = -34.75, lon = 148.20) # already degC
-      terra_by_member <- terra_vals[order(field_tbl$member)]
-      ecc_by_member <- ecc[order(ecc$member), , drop = FALSE]
-      expect_equal(ecc_by_member$value - 273.15, terra_by_member, tolerance = 0.01)
-    }
+    # The unified reader (plan 18): same messages, same members, carrying the
+    # ECMWF-native param/step metadata alongside the decoded value.
+    tbl <- grib_point_table(ecmwf_grib_path(), lat = -34.75, lon = 148.20)
+    expect_equal(nrow(tbl), 3)
+    expect_setequal(tbl$member, ecc$member)
+    expect_true(all(tbl$param == "2t"))
+    expect_true(all(tbl$step == "24"))
+    # value column agrees with the standalone point extractor
+    expect_equal(tbl$value[order(tbl$member)], ecc$value[order(ecc$member)])
   })
 })
