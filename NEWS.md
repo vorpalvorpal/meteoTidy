@@ -1,5 +1,9 @@
 # meteoTidy (development version)
 
+- Serve-time forecast shrinkage now uses a **day-of-year × hour-of-day**
+  climatology target for sub-daily forecasts (built from `history_hourly`),
+  instead of collapsing every hour to the daily mean; it falls back to the
+  daily day-of-year climatology where no hourly history exists.
 - Initial scaffolding: package infrastructure, `testthat` 3 harness, CI, the
   classed condition system (`abort_meteo()`, `warn_meteo()`, `inform_meteo()`,
   `meteo_conditions()`), and the injectable clock seam (`.now()`).
