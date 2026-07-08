@@ -5,8 +5,10 @@
 series_with_gap <- function(variable, value, gap_at = integer(),
                             start = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
                             site_id = "test", source = "test_src") {
-  s <- make_obs(n = length(value), variable = variable, value = value,
-                start = start, site_id = site_id, source = source)
+  s <- make_obs( # nolint: object_usage_linter.
+    n = length(value), variable = variable, value = value,
+    start = start, site_id = site_id, source = source
+  )
   if (length(gap_at)) {
     s$value[gap_at] <- NA_real_
     s$qc_flag[gap_at] <- "missing"
@@ -22,10 +24,12 @@ transfer_pair <- function(n = 200, offset = 2, seed = 1) {
   target <- rnorm(n, mean = 15, sd = 3)
   source <- target + offset
   list(
-    source = make_obs(n = n, variable = "temperature_2m", value = source,
-                      source = "donor"),
-    target = make_obs(n = n, variable = "temperature_2m", value = target,
-                      source = "site")
+    source = make_obs( # nolint: object_usage_linter.
+      n = n, variable = "temperature_2m", value = source, source = "donor"
+    ),
+    target = make_obs( # nolint: object_usage_linter.
+      n = n, variable = "temperature_2m", value = target, source = "site"
+    )
   )
 }
 

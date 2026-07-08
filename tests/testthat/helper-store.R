@@ -11,7 +11,8 @@ local_store <- function(env = parent.frame()) {
 # tests to assert file-count invariants).
 count_parts <- function(store_root, table = "observations") {
   length(list.files(file.path(store_root, table),
-                     pattern = "\\.parquet$", recursive = TRUE))
+    pattern = "\\.parquet$", recursive = TRUE
+  ))
 }
 
 # Every `.rds` under a directory (the calibration store must contain none).

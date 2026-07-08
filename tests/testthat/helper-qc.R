@@ -10,6 +10,7 @@ qc_series <- function(variable, value,
                       start = as.POSIXct("2026-01-01 00:00", tz = "UTC"),
                       site_id = "test", source = "test_src",
                       method = "measured") {
+  # nolint next: object_usage_linter. sibling helper
   make_obs(n = length(value), variable = variable, value = value,
            start = start, site_id = site_id, source = source, method = method)
 }

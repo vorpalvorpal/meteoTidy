@@ -5,7 +5,9 @@ local_pipeline_mocks <- function(env = parent.frame()) {
   testthat::local_mocked_bindings(
     qc_run = function(...) invisible(),
     fill_run = function(...) invisible(),
+    # nolint next: object_usage_linter. sibling helper
     correct_apply = function(...) make_obs(n = 1),
+    # nolint next: object_usage_linter. sibling helper
     correct_refit = function(...) invisible(skill_verdict(promote = FALSE)),
     verify_run = function(...) invisible(),
     build_history_hourly = function(...) make_obs(n = 1),
@@ -30,8 +32,8 @@ describe("each verb is idempotent over the same inputs and clock", {
     rows2 <- nrow(store_read_forecast(root, "test"))
     wm2 <- store_get_watermark(root, "test", "forecasts", "openmeteo")
 
-    expect_equal(rows2, rows1)      # no duplicate rows
-    expect_equal(wm2, wm1)          # watermark not double-advanced
+    expect_equal(rows2, rows1) # no duplicate rows
+    expect_equal(wm2, wm1) # watermark not double-advanced
   })
 
   it("met_sync_live twice yields identical observation contents", {
@@ -40,8 +42,9 @@ describe("each verb is idempotent over the same inputs and clock", {
     now <- as.POSIXct("2026-01-01 12:00", tz = "UTC")
     mock_acquisition()
     local_pipeline_mocks()
-    testthat::local_mocked_bindings(archive_forecasts = function(...)
-      tibble::tibble(note = "ok"))
+    testthat::local_mocked_bindings(archive_forecasts = function(...) {
+      tibble::tibble(note = "ok")
+    })
 
     met_sync_live(site, now = now, config = pipeline_config(root))
     n1 <- nrow(store_read_obs(root, "test", include_superseded = TRUE))
@@ -58,20 +61,24 @@ describe("multi-site processing with per-site isolation", {
     s2 <- make_test_site(site_id = "site_2", store_root = root)
     now <- as.POSIXct("2026-01-02", tz = "UTC")
     local_pipeline_mocks()
-    testthat::local_mocked_bindings(archive_forecasts = function(...)
-      tibble::tibble(note = "ok"))
+    testthat::local_mocked_bindings(archive_forecasts = function(...) {
+      tibble::tibble(note = "ok")
+    })
     # site_1's obs source is dead; site_2 is healthy
     calls <- new.env()
     testthat::local_mocked_bindings(
       .acquire_obs = function(source, site, window, now = NULL, ...) {
-        if (site_id(site) == "site_1")
+        if (site_id(site) == "site_1") {
           abort_meteo("dead", class = "http_gone")
+        }
         new_obs(make_obs(n = 2, site_id = "site_2"))
       },
       .acquire_forecast = function(...) new_forecast(make_forecast(n = 2))
     )
-    status <- met_sync_daily(met_sites(list(s1, s2)), now = now,
-                             config = pipeline_config(root))
+    status <- met_sync_daily(met_sites(list(s1, s2)),
+      now = now,
+      config = pipeline_config(root)
+    )
     expect_equal(nrow(status), 2)
     expect_setequal(status$site_id, c("site_1", "site_2"))
     expect_true(any(status$status == "degraded"))

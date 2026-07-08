@@ -24,23 +24,31 @@ describe("annual-harmonic shrinkage with short overlap", {
   it("keeps the untrained opposite-season correction near the annual mean", {
     # Only 4 months (summer) of pairs. A shrunk fit must not extrapolate a large
     # opposite-season (winter) correction; it should stay near the annual-mean.
-    summer_pairs <- forecast_obs_pairs(n = 120, bias_fun = seasonal_bias,
-                                       issue0 = as.POSIXct("2025-01-01",
-                                                           tz = "UTC"))
+    summer_pairs <- forecast_obs_pairs(
+      n = 120, bias_fun = seasonal_bias,
+      issue0 = as.POSIXct("2025-01-01",
+        tz = "UTC"
+      )
+    )
     shrunk <- fit_mean_bias(summer_pairs, n_harmonics = 2, shrink = TRUE)
     unshrunk <- fit_mean_bias(summer_pairs, n_harmonics = 2, shrink = FALSE)
 
     # evaluate the implied correction on a winter day (doy ~ 200, untrained)
-    winter <- forecast_obs_pairs(n = 1, bias_fun = seasonal_bias,
-                                 issue0 = as.POSIXct("2025-07-20", tz = "UTC"))
+    winter <- forecast_obs_pairs(
+      n = 1, bias_fun = seasonal_bias,
+      issue0 = as.POSIXct("2025-07-20", tz = "UTC")
+    )
     c_shrunk <- apply_mean_bias(shrunk, winter)$value - winter$forecast
     c_unshrunk <- apply_mean_bias(unshrunk, winter)$value - winter$forecast
     annual_mean_bias <- -mean(seasonal_bias(as.integer(format(
-      summer_pairs$issue_time, "%j")), 24))
+      summer_pairs$issue_time, "%j"
+    )), 24))
 
     # the shrunk winter correction is closer to the annual-mean than the unshrunk
-    expect_lt(abs(c_shrunk - annual_mean_bias),
-              abs(c_unshrunk - annual_mean_bias))
+    expect_lt(
+      abs(c_shrunk - annual_mean_bias),
+      abs(c_unshrunk - annual_mean_bias)
+    )
   })
 
   it("does not shrink the hour-of-day harmonics (a month has ~30 diurnal cycles)", {

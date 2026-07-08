@@ -6,11 +6,11 @@ describe("consistency_pass() clips and counts violations", {
     wide <- tibble::tibble(
       site_id = "test",
       datetime_utc = as.POSIXct("2026-01-01", tz = "UTC"),
-      temperature_2m = 20, dewpoint_2m = 25,          # dewpoint > temp
-      relative_humidity_2m = 130,                     # RH > 100
-      wind_speed_10m = 8, wind_gusts_10m = 5,         # gust < wind
+      temperature_2m = 20, dewpoint_2m = 25, # dewpoint exceeds temp
+      relative_humidity_2m = 130, # RH exceeds 100
+      wind_speed_10m = 8, wind_gusts_10m = 5, # gust below wind
       direct_radiation = 1200, diffuse_radiation = 400,
-      clear_sky_ceiling = 1000                        # sum > ceiling
+      clear_sky_ceiling = 1000 # sum exceeds ceiling
     )
     out <- consistency_pass(wide)
     expect_lte(out$result$dewpoint_2m, out$result$temperature_2m)

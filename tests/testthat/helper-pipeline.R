@@ -18,7 +18,9 @@ pipeline_config <- function(store_root, forecast_sources = c("openmeteo", "bom_f
 # Install fakes for the acquisition seams: `.acquire_forecast()` and
 # `.acquire_obs()` return canonical rows; `record` in `calls` tracks what ran.
 mock_acquisition <- function(calls = new.env(),
+                             # nolint next: object_usage_linter. sibling helper
                              forecast = new_forecast(make_forecast(n = 3)),
+                             # nolint next: object_usage_linter. sibling helper
                              obs = new_obs(make_obs(n = 3)),
                              fail_sources = character(),
                              env = parent.frame()) {

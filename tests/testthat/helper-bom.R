@@ -5,7 +5,7 @@ read_bom_xml <- function(name) {
   xml2::read_xml(testthat::test_path(file.path("_fixtures/bom", name)))
 }
 read_bom_json <- function(name) {
-  read_json_fixture(file.path("_fixtures/bom", name))
+  read_json_fixture(file.path("_fixtures/bom", name)) # nolint: object_usage_linter. sibling helper
 }
 
 # Build a fake transport rung for ladder tests. `outcome` is one of:
@@ -30,7 +30,7 @@ fake_transport <- function(id, applies_to, outcome, counter = new.env()) {
 
 # A minimal canonical obs tibble a rung can "serve" (transport stamped by ladder).
 bom_rows <- function(source = "bom_obs") {
-  new_obs(make_obs(n = 2, source = source, method = "measured"))
+  new_obs(make_obs(n = 2, source = source, method = "measured")) # nolint: object_usage_linter.
 }
 
 # A request descriptor the ladder routes (product decides which rungs apply).
