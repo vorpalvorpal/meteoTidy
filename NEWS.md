@@ -1,5 +1,9 @@
 # meteoTidy (development version)
 
+- Gap-fill now **derives thermodynamically-coupled variables from co-observed
+  inputs** (relative humidity ↔ dewpoint ↔ temperature) exactly, in a
+  derivation tier that runs **before** the donor tier — so an exact physical
+  computation pre-empts an inter-station donor fetch (`method = "derived"`).
 - Serve-time forecast shrinkage now uses a **day-of-year × hour-of-day**
   climatology target for sub-daily forecasts (built from `history_hourly`),
   instead of collapsing every hour to the daily mean; it falls back to the
