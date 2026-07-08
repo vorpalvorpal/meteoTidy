@@ -105,7 +105,3 @@ fit for operational bounds and calibration priors, unfit for trend analysis.
 - `vignette("scheduling")` — recommended cadence for the four pipeline verbs
   and cron / GitHub Actions / taskscheduleR recipes, including the BOM
   cannot-backfill trade-off.
-- [`SCOPING.md`](SCOPING.md) — the full design document (data model,
-  correction tiers, channel policies, risks).
-- [`plans/`](plans/) — the staged implementation plans the package was built
-  from.
