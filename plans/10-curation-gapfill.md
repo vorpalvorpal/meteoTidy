@@ -1,5 +1,12 @@
 # Plan 10 — Curation: gap-fill / transfer engine
 
+> **Extended (2026-07-08, see [`18-eccodes-and-derivation.md`](18-eccodes-and-derivation.md)).**
+> A **deterministic derivation tier** is inserted in the fill ladder **between
+> micro and donor**: a coupled variable (RH ↔ dewpoint ↔ temperature) whose
+> physical inputs are all co-observed and QC-clean at a gap timestamp is
+> computed exactly (`method = "derived"`) before any donor fetch. The
+> micro/donor/model tiers below are otherwise unchanged.
+
 ## Objective
 
 Implement tiered gap-filling and the shared **transfer engine** that both gap-fill

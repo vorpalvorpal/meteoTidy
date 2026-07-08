@@ -402,6 +402,10 @@ guarantee.
   variable dictionary. Solar QC names its clear-sky model (McClear or
   Ineichen–Perez) and applies BSRN-style limits.
 - Tiered fill: micro-gaps ≤ 2–3 h via `imputeTS` (smooth variables only);
+  **deterministic derivation** of thermodynamically-coupled variables from
+  co-observed inputs (RH ↔ dewpoint ↔ temperature, exact physics — added
+  2026-07-08, see `plans/18`), tried **before** the donor tier since exact
+  physics beats an inter-station transfer and carries no siting bias;
   medium gaps via the best bias-corrected donor (BOM station → GHCNh station →
   ERA5 → SILO disaggregated, with donors **deduplicated by physical station
   identity** — BOM real-time feeds and GHCNh serve largely the same stations,
@@ -670,9 +674,12 @@ Exported verbs; the user schedules them (cron / GitHub Actions /
 - **Data access:** `weatherOz` ≥ 3.0.0 (SILO), `worldmet` ≥ 1.0.0 (GHCNh —
   `import_ghcn_hourly()`; GHCNh support landed in 1.0.0, current CRAN 1.1.0).
   **Statistics:** `qmap`, `MBC`, `crch`, `imputeTS`, `circular`,
-  `scoringRules`. **Storage:** `arrow` (+ `duckdb` in Suggests). **Objects:**
-  S7 + `units`, matching the meteoHazard idiom. Heavy/optional things in
-  Suggests where feasible.
+  `scoringRules`. **Storage:** `arrow` (+ `duckdb`/`dbplyr` in Suggests).
+  **Objects:** S7 + `units`, matching the meteoHazard idiom. Heavy/optional
+  things in Suggests where feasible. **GRIB (ECMWF):** read via **eccodes**
+  (external CLI, provisioned by `ecmwf_install_eccodes()`), not `terra`/GDAL —
+  a hard requirement for `source_ecmwf()` only (superseded 2026-07-08, see
+  `plans/18` and §13); `terra` is no longer a dependency.
 - **Open-Meteo licensing (compliance flag):** the free tier is
   **non-commercial only** (< 10 000 calls/day, no key); commercial use
   requires a paid plan with an API key, and the historical, climate, ensemble,
@@ -802,6 +809,17 @@ would need a policy re-check first.
   (param/unit/step/member), which never needed CCSDS decode in the first
   place. Never triggered automatically; a one-time, explicit, cached
   provisioning step.
+  **Superseded 2026-07-08 (see `plans/18`):** the terra/GDAL path is **removed
+  entirely**. The `terra::meta()` band-metadata drift above is a
+  version-coupling that has no clean fix (GDAL's NCEP-table translation of
+  `GRIB_ELEMENT` is legitimately version-dependent), so GRIB is now read
+  **only** through eccodes — which reads ECMWF-native `shortName`/`step`/
+  `perturbationNumber`/`units` (no translation to drift), decodes CCSDS
+  natively, and extracts the nearest gridpoint, all in one `grib_ls` call.
+  eccodes therefore becomes a **hard requirement** for `source_ecmwf()` (a
+  fetch without it aborts `eccodes_required`, pointing at
+  `ecmwf_install_eccodes()`), `terra` leaves the dependency list, and CI
+  installs eccodes so the real GRIB path is tested rather than skipped.
 - **Timezone/DST** at the daily boundary (mitigated by matching the BOM/SILO
   9am local-clock-time convention, §3);
   **small-sample overfitting** (mitigated by enforced tier gates plus

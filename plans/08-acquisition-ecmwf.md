@@ -1,5 +1,14 @@
 # Plan 08 — Acquisition: ECMWF Open Data (GRIB2)
 
+> **Superseded in part (2026-07-08, see [`18-eccodes-and-derivation.md`](18-eccodes-and-derivation.md)).**
+> The terra/GDAL GRIB-read path described below (`grib_open()`,
+> `grib_field_table()`, `grib_extract_point()`, the CCSDS-capability guard) is
+> **removed**: GRIB is now read **only** through eccodes, because
+> `terra::meta()`'s band metadata drifts across GDAL versions. eccodes becomes a
+> hard requirement for `source_ecmwf()`; `terra` is dropped. The `.index`
+> range-download, u/v recombination, issue-cycle rounding, and adapter contract
+> below are unchanged.
+
 ## Objective
 
 Implement `source_ecmwf()` over ECMWF Open Data (CC-BY): the **medium-range
