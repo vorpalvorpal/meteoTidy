@@ -2,10 +2,13 @@
 
 ## Objective
 
-Implement `source_ecmwf()` over ECMWF Open Data (CC-BY): the 46-day extended-range
-ensemble at 0.25°, read from GRIB2 via terra/GDAL’s GRIB driver, extracted at the
-site point, returned as canonical forecast rows. This is the one long-range
-channel whose issue-time archive the deployment fully controls (SCOPING §5.2).
+Implement `source_ecmwf()` over ECMWF Open Data (CC-BY): the **medium-range
+`enfo` ensemble** at 0.25° (see the "Deviation from SCOPING §5.2" note at the
+end — the 46-day `eefo` stream this plan originally targeted is **not** in the
+free open-data catalogue as of 2026-07-06), read from GRIB2 via terra/GDAL’s
+GRIB driver, extracted at the site point, returned as canonical forecast rows.
+This is the channel whose issue-time archive the deployment fully controls; the
+46-day long-range need is met by the Open-Meteo seasonal splice (SCOPING §5.2).
 The plan front-loads the **GRIB spike** (SCOPING §13/§14).
 
 ## Scope
@@ -111,7 +114,15 @@ its byte range. To avoid downloading whole ensemble files:
 
 ### `source_ecmwf()`
 
-`source_ecmwf(stream = "eefo", resolution = "0p25", source_id = "ecmwf")`:
+> **As implemented, `stream` defaults to `"enfo"`, not `"eefo"` — see
+> "Deviation from SCOPING §5.2" at the end of this file.** `"eefo"` does not
+> exist in ECMWF's real open-data catalogue as of 2026-07-06; `"enfo"` (the
+> real medium-range ensemble, ~360h/15-day horizon, 50 perturbed members, no
+> control member) is what the shipped code actually targets.
+
+`source_ecmwf(stream = "enfo", resolution = "0p25", source_id = "ecmwf")`
+(original design below, retained for context; superseded per the deviation
+note):
 
 - **`stream = "eefo"`** is the 46-day **extended-range ensemble (101 members)** —
   the corrected identifier (the medium-range `enfo` stream stops at step 360 h,
@@ -172,3 +183,113 @@ Shared skeleton plus:
 - `terra` is in Suggests; absence is a clean, guided error, never a crash.
 - `adapters_for_site()` resolves `"ecmwf"`.
 - New condition classes registered in `meteo_conditions()`.
+
+## Deviation from SCOPING §5.2 (recorded 2026-07-06)
+
+Live verification against `https://data.ecmwf.int/forecasts/` (and its S3
+mirror, `ecmwf-forecasts` on `eu-central-1`) on 2026-07-06 found two things
+this plan and SCOPING §5.2 got wrong, per the README's "stop and flag it"
+rule for a plan/scoping disagreement:
+
+1. **`"eefo"` (the 46-day extended-range ensemble) is not present in the real
+   open-data catalogue.** The only streams that exist under `ifs/0p25/` are
+   `oper`, `enfo`, `waef`, `wave` (plus the separate `aifs-ens`/`aifs-single`
+   model families) — checked across every issue cycle for the preceding 30
+   days. SCOPING §5.2's premise ("fully open since 2025-10-01... the `eefo`
+   stream") does not hold as of this verification date. **Decision (user
+   confirmed):** `source_ecmwf()` now defaults to `stream = "enfo"` — real,
+   open today, ~360h/15-day medium-range horizon, 50 perturbed members
+   (`1..50`, **no separate control/member-0** in the open feed — also
+   verified live, contrary to this plan's original test assumptions).
+   `stream = "eefo"` remains an accepted value (untested; will 404 until/
+   unless ECMWF opens it) so the adapter picks it up with no code change if
+   it ever ships. **Net effect: `source_ecmwf()` currently provides no
+   long-range (46-day) coverage.** `source_openmeteo(product = "seasonal")`
+   (Plan 05) is the only long-range channel in practice, contradicting
+   SCOPING §5.2's "both ship in v1" — flagged here rather than silently
+   resolved; a future plan should revisit long-range coverage if/when ECMWF
+   opens an extended-range stream, or scope the seasonal splice as the sole
+   v1 long-range channel in SCOPING itself.
+2. **File layout is per-step, not per-cycle.** ECMWF Open Data ships one
+   GRIB2 + `.index` pair *per forecast step* (e.g.
+   `20260702000000-24h-enfo-ef.grib2` under
+   `<date>/<HH>z/ifs/<res>/<stream>/`), not one pair covering the whole issue
+   cycle. `R/source-ecmwf.R`'s URL building was corrected accordingly.
+
+Additional bugs the real fixture caught (all fixed in the same pass, see
+`R/grib-read.R`'s and `R/source-ecmwf.R`'s header notes for detail):
+`terra::metags()` does not expose GDAL's native GRIB band metadata (the real
+accessor is `terra::meta(rast, layers = TRUE)`); GDAL auto-converts ECMWF's
+Kelvin temperature fields to Celsius on read, so the unit must be read off
+the decoded band, not assumed to be Kelvin; the CCSDS/libaec guard
+(`.grib_check_ccsds_support()`) only tested `grib_open()`, which succeeds
+regardless of libaec support since it never touches pixel data — it now
+attempts a real point extraction; `.http_get()` (Plan 04) was JSON-only and
+could not have served the JSON-*lines* `.index` sidecar or raw `.grib2`
+bytes at all — extended with a `parse = c("json", "lines", "raw")` argument.
+
+**Environment note:** this dev machine's terra/GDAL (terra 1.8.70, bundled
+GDAL) cannot decode CCSDS/AEC-compressed pixel data (confirmed:
+`g2_unpack7: ... requires building against libaec`) — exactly the risk
+SCOPING §13 flagged. The guard now correctly turns this into
+`"grib_ccsds_unsupported"` rather than a raw GDAL error; the test suite
+detects this live (`ecmwf_ccsds_supported()`, `tests/testthat/helper-ecmwf.R`)
+and asserts whichever of the two documented outcomes is actually true, so it
+is meaningful on both a libaec-enabled and a libaec-less GDAL build. Getting a
+libaec-enabled GDAL working with `terra` in this environment (a from-source
+`terra` rebuild against a system GDAL) was deferred as a separate, larger
+piece of work (user confirmed) rather than blocking this plan.
+
+## Post-audit follow-up: the eccodes CLI fallback (2026-07-07)
+
+The deferred libaec item above was picked back up and investigated properly.
+A from-source `terra` rebuilt against Homebrew's current `gdal` (which does
+bundle libaec) **does** fix the CCSDS decode -- verified live: a real
+CCSDS-compressed message decoded to plausible values via `terra::extract()`.
+But it is not a clean substitute for the CRAN binary: GDAL's own band-metadata
+exposure drifted between 3.8.5 (the CRAN binary) and 3.13.1 (current
+Homebrew), and `terra::meta(rast, layers = TRUE)` -- the call
+`.grib_band_tag()` depends on -- stopped surfacing `GRIB_UNIT`/
+`GRIB_FORECAST_SECONDS`/`GRIB_PDS_TEMPLATE_ASSEMBLED_VALUES` against the newer
+GDAL, even though `gdalinfo -json` (the same GDAL library, no terra involved)
+reports them correctly. This reproduced identically with both terra's GitHub
+HEAD and the latest CRAN-released source build, so it looks like a genuine
+terra/newer-GDAL incompatibility, not a fluke of unreleased code -- chasing a
+"right" GDAL version is not a stable foundation to build on.
+
+Since the CCSDS/AEC compression only affects a GRIB2 message's *pixel data*
+section -- its metadata (PDS/GDS) is always plain and already read correctly
+by the CRAN binary's terra -- the decode step is separable from everything
+else this plan needs. `R/ecmwf-eccodes.R` adds a narrow, decode-only fallback
+using eccodes (ECMWF's own GRIB library, which handles every packing
+template reliably): `grib_ls -l lat,lon,1`, a first-class eccodes CLI feature
+purpose-built for "value nearest this point" (not `grib_get_data`, which
+dumps every one of ECMWF's ~1.04M global gridpoints per message -- wildly
+wasteful for a single-site query). CLI, not eccodes' Python bindings: this
+package already treats one heavy optional binary (terra/GDAL) as
+Suggests-gated; a second optional *binary* is a smaller footprint than also
+managing a Python interpreter + numpy + `python-eccodes`.
+
+eccodes is an external system binary, not an R package, so it cannot be
+declared as a normal dependency (`SystemRequirements` documents it, but that
+is informational only -- nothing auto-installs it for a user). Rather than
+brew/apt/choco (three divergent code paths, each needing a system package
+manager that may need elevated privileges, installing into unpinned *shared*
+system state -- exactly the GDAL-version-drift problem above, not a fix for
+it), `ecmwf_install_eccodes()` downloads `micromamba` (a tiny, dependency-free
+package manager, ~7-14MB, downloaded once) and uses it to install the plain
+`eccodes` conda-forge package into one self-contained, deletable folder under
+`tools::R_user_dir("meteoTidy", "cache")` -- pinned, reproducible, and
+identical across macOS/Linux/Windows. This is never triggered automatically;
+`fetch_forecast()` only reaches for it when GDAL's own decode fails at value-
+read time and a usable `grib_ls` happens to already be cached or on `PATH`.
+
+Verified live end-to-end (2026-07-07), the exact mechanism now shipped: a
+real `micromamba create -c conda-forge eccodes`, followed by `grib_ls -j -l
+lat,lon,1` against the committed CCSDS fixture, decoded all 3 members to the
+same values (Kelvin, converted to Celsius) as a from-source terra/Homebrew-GDAL
+decode of the identical file -- two independent decoders agreeing. eccodes
+reports the *native* GRIB2 unit (Kelvin for temperature), unlike GDAL's GRIB
+driver, which auto-converts to Celsius on read -- `fetch_forecast()` uses
+eccodes' own reported unit for `to_canonical()` when the fallback path is
+taken, not GDAL's.

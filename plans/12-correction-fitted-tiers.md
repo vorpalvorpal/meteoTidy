@@ -14,7 +14,8 @@ all opt-in/experimental.
 ## Scope
 
 **In:**
-- `fit`/`apply` for tiers `mean_bias`, `qmap`, `emos` (+ optional MBC multivariate).
+- `fit`/`apply` for tiers `mean_bias`, `qmap`, `emos` (MBC multivariate deferred
+  to post-v1 — see File layout).
 - Lead-dependent shrinkage wrapper for the forecast path.
 - Wind-direction u/v correction.
 - Post-correction consistency pass (reusing Plan 09’s `physics-constraints`).
@@ -45,9 +46,8 @@ calibration on Historical-Forecast `lead_time = NA` rows).
 
 ```
 R/tier-mean-bias.R        # fit/apply: harmonic covariates
-R/tier-qmap.R             # fit/apply: pooled qmap + tail policy
+R/tier-qmap.R             # fit/apply: pooled qmap + tail policy (empirical, hand-rolled)
 R/tier-emos.R             # fit/apply: crch per lead bucket
-R/tier-mbc.R              # optional multivariate (MBC) — Suggests
 R/shrinkage.R             # lead-dependent blend toward climatology (forecast only)
 R/wind-uv.R               # direction <-> u/v correction
 R/consistency-pass.R      # post-correction enforce (reuses physics-constraints)
@@ -61,7 +61,14 @@ tests/testthat/test-consistency-pass.R
 tests/testthat/test-model-only.R
 ```
 
-Add `qmap`, `crch` to `Imports`; `MBC` to `Suggests`.
+Add `crch` to `Imports`. **Quantile mapping is implemented directly** (the
+cross-season pooling + constant-shift tail policy below are not provided by the
+`qmap` package, so there is no `qmap`-package dependency — do not add one).
+
+**MBC (multivariate bias correction) is deferred to post-v1** (`R/tier-mbc.R`
+is not shipped, and `MBC` is not a dependency). It was always the "optional
+multivariate" tier; the three core tiers (mean_bias, qmap, emos) are the v1
+scope. If reinstated later, add `MBC` to `Suggests` and guard every use.
 
 ## Detailed design
 
@@ -214,8 +221,8 @@ marker that the value is experimental.
 ## Definition of done
 
 Shared skeleton plus:
-- All three core tiers fit/apply and persist **as data** (no `.rds`); MBC guarded
-  behind `Suggests`.
+- All three core tiers (mean_bias, qmap, emos) fit/apply and persist **as data**
+  (no `.rds`). **MBC is deferred to post-v1** (not shipped).
 - Lead-dependent shrinkage applies to forecasts only and is proven to reduce
   long-lead error vs unshrunk QM.
 - Wind direction never QM’d as an angle; consistency pass shares Plan 09’s module.

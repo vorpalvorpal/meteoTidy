@@ -1,0 +1,253 @@
+# Plan 10 -- native-resolution -> hourly, and hourly -> local-day daily
+# aggregation (SCOPING sections 3 and 6).
+
+# The minimum fraction of expected native-cadence records an hour must have
+# (among qc_flag == "ok" rows) to be aggregated at all; below this the hour
+# is left missing for the fill tiers to handle rather than aggregated from a
+# too-sparse sample. SCOPING section 6 documents "a documented completeness
+# threshold (default >= 75%)"; not pinned more precisely by any test beyond
+# "6 of 6 aggregates, 2 of 6 does not", so 75% is used as written.
+.hourly_completeness_threshold <- function() {
+  0.75
+}
+
+# The expected number of native-cadence samples per hour, inferred from the
+# input's own modal sampling interval (the smallest common gap between
+# consecutive timestamps of the same variable) rather than a hard-coded
+# constant, so this works for both 10-minute logger data and any other
+# native cadence.
+.expected_per_hour <- function(datetime_utc) {
+  ord <- sort(unique(datetime_utc))
+  if (length(ord) < 2) {
+    return(1L)
+  }
+  gaps <- as.numeric(diff(ord), units = "secs")
+  modal_gap <- as.numeric(names(sort(table(gaps), decreasing = TRUE))[1])
+  if (is.na(modal_gap) || modal_gap <= 0) {
+    return(1L)
+  }
+  max(1L, round(3600 / modal_gap))
+}
+
+# Vector (circular) mean of a set of angles (degrees): convert to unit
+# vectors, average the components, recombine via atan2(), wrap to [0, 360).
+.circular_mean <- function(angles_deg) {
+  if (length(angles_deg) == 0 || all(is.na(angles_deg))) {
+    return(NA_real_)
+  }
+  rad <- angles_deg * pi / 180
+  s <- mean(sin(rad), na.rm = TRUE)
+  co <- mean(cos(rad), na.rm = TRUE)
+  (atan2(s, co) * 180 / pi + 360) %% 360
+}
+
+# Aggregate one variable's native-resolution rows (already filtered to
+# qc_flag == "ok") within one (site_id, hour) bucket to a single value,
+# dispatched by statistical_class.
+.aggregate_value <- function(values, stat_class) {
+  if (isTRUE(stat_class == "intermittent")) {
+    sum(values, na.rm = TRUE)
+  } else if (isTRUE(stat_class == "circular")) {
+    .circular_mean(values)
+  } else {
+    mean(values, na.rm = TRUE)
+  }
+}
+
+#' Aggregate native-resolution observations to hourly
+#'
+#' Aggregates `obs` (native-resolution rows, e.g. 10-minute logger data) up
+#' to one row per `(site_id, variable, hour)`, dispatched by the variable's
+#' `statistical_class` (SCOPING section 6): mean for `linear`/`bounded`/
+#' `clear_sky_indexed` (radiation, already a rate in W/m^2), a **vector
+#' (sin/cos) mean** for `circular` (wind direction -- never a plain numeric
+#' mean, which would fail across the 0/360 wrap), and sum for `intermittent`
+#' (rainfall). Only `qc_flag == "ok"` rows contribute. An hour with fewer
+#' than `.hourly_completeness_threshold()` (default 75%) of its expected
+#' native-cadence records (inferred from the input's own modal sampling
+#' interval) is left out of the aggregated output entirely, so the fill
+#' tiers can treat it as a gap rather than aggregating from a too-sparse
+#' sample.
+#'
+#' @param obs A canonical long obs tibble at native resolution.
+#' @param dict The variable dictionary.
+#' @return A canonical long obs tibble, one row per `(site_id, variable,
+#'   hour)` that met the completeness threshold, `method = "aggregated"`.
+#' @keywords internal
+#' @noRd
+aggregate_hourly <- function(obs, dict = met_variables()) {
+  if (nrow(obs) == 0) {
+    return(obs)
+  }
+
+  hour <- as.POSIXct(trunc(obs$datetime_utc, "hours"), tz = "UTC")
+  variables <- unique(obs$variable)
+
+  # `.expected_per_hour()` is a property of a whole variable's own sampling
+  # cadence (across all its sites/hours), not of any one bucket, so it is
+  # computed once per variable here and looked up per row below -- exactly
+  # what the old per-variable loop iteration did before descending into its
+  # per-site/per-hour inner loops.
+  expected_by_variable <- vapply(variables, function(v) {
+    .expected_per_hour(obs$datetime_utc[obs$variable == v])
+  }, numeric(1))
+  expected <- expected_by_variable[match(obs$variable, variables)]
+  stat_class <- dict$statistical_class[match(obs$variable, dict$variable)]
+
+  ok <- obs$qc_flag == "ok" & !is.na(obs$value)
+  group <- vctrs::vec_group_id(data.frame(site_id = obs$site_id, variable = obs$variable,
+                                          hour = hour, stringsAsFactors = FALSE))
+
+  # Bucket membership (all rows, including non-"ok") determines `expected`'s
+  # denominator match, but completeness/aggregation only ever look at "ok"
+  # rows -- so split "ok" row indices by their bucket's group id and iterate
+  # only the buckets that have at least one "ok" row.
+  ok_groups <- split(which(ok), group[ok])
+
+  out_rows <- lapply(ok_groups, function(idx) {
+    n_ok <- length(idx)
+    completeness <- n_ok / expected[idx[[1]]]
+    if (completeness < .hourly_completeness_threshold()) {
+      return(NULL)
+    }
+    value <- .aggregate_value(obs$value[idx], stat_class[idx[[1]]])
+    tibble::tibble(
+      site_id = obs$site_id[idx[[1]]],
+      datetime_utc = hour[idx[[1]]],
+      variable = obs$variable[idx[[1]]],
+      value = value,
+      source = obs$source[idx[[1]]],
+      method = "aggregated",
+      qc_flag = "ok"
+    )
+  })
+  out_rows <- Filter(Negate(is.null), out_rows)
+
+  if (length(out_rows) == 0) {
+    return(obs[0, , drop = FALSE])
+  }
+  out <- vctrs::vec_rbind(!!!out_rows)
+  out[order(out$site_id, out$variable, out$datetime_utc), , drop = FALSE]
+}
+
+# ---- hourly -> daily --------------------------------------------------------
+
+# Table-driven day-window convention per variable (SCOPING section 3: "do not
+# hard-code one convention across variables"). `"rain_day"` is SILO's
+# documented 24h-to-9am convention (rainfall accumulated in the 24 h ending
+# at 9am local clock time is assigned to the day of observation -- see SILO's
+# climate-variables documentation, https://www.longpaddock.qld.gov.au/silo/
+# about/climate-variables/, and `.silo_day_to_utc_instant()` in
+# R/source-silo.R, which maps the same convention at ingest). Every other
+# variable defaults to `"calendar_day"` (local midnight to midnight) -- SILO
+# reports temperature min/max on essentially the same station-day, but absent
+# a test pinning a different (e.g. 9am-to-9am) convention for temperature,
+# the plain local calendar day is the simplest defensible default (plans/
+# README's ambiguity order, (c)).
+.daily_window_convention <- function(variable) {
+  if (identical(variable, "precipitation")) "rain_day" else "calendar_day"
+}
+
+# The "day" (a Date) each `datetime_utc` belongs to, for a given convention,
+# in the site's local timezone. `"rain_day"` implements SILO's documented
+# convention (plans/10: "24 h to 9am, assigned to the DAY OF OBSERVATION"):
+# the window (9am D-1, 9am D] is labelled D, i.e. a timestamp at or after
+# 9am local wall-clock belongs to the NEXT day's label. The comparison is
+# on the local wall clock itself (not a fixed 9-hour offset in absolute
+# time), so the boundary follows the clock through DST transitions and a
+# transition day is naturally a 23-/25-hour day (SCOPING section 3).
+.assign_day <- function(datetime_utc, timezone, convention) {
+  local_str <- format(datetime_utc, tz = timezone)
+  day <- as.Date(substr(local_str, 1, 10))
+  if (identical(convention, "rain_day")) {
+    hour <- as.integer(format(datetime_utc, "%H", tz = timezone))
+    day <- day + as.integer(hour >= 9)
+  }
+  day
+}
+
+#' Aggregate hourly observations to daily on the local-day boundary
+#'
+#' Aggregates `obs_hourly` up to one row per `(site_id, variable, day)`,
+#' where "day" is assigned per a **table-driven, per-variable** local-clock-
+#' time convention (`.daily_window_convention()`) matching SILO's documented
+#' day windows (SCOPING section 3): `precipitation` uses the 24h-to-9am
+#' rain-day (summed), matching SILO's convention exactly, including at DST
+#' transitions (a 23-/25-hour day by construction, since the boundary is
+#' computed from each timestamp's own local-clock conversion, not a fixed UTC
+#' span); every other variable defaults to the local calendar day (mean,
+#' except `intermittent` classes which still sum).
+#'
+#' @param obs_hourly A canonical long obs tibble at hourly resolution (e.g.
+#'   `aggregate_hourly()`'s output).
+#' @param site A `met_site` object (supplies the IANA timezone).
+#' @return A canonical long obs tibble, one row per `(site_id, variable,
+#'   day)`, `datetime_utc` set to local midnight of the assigned day (9am
+#'   local for `rain_day` variables, matching the SILO ingest instant),
+#'   `method = "aggregated"`.
+#' @keywords internal
+#' @noRd
+aggregate_daily <- function(obs_hourly, site) {
+  if (nrow(obs_hourly) == 0) {
+    return(obs_hourly)
+  }
+  dict <- met_variables()
+  tz <- site@timezone
+
+  variables <- unique(obs_hourly$variable)
+
+  # Both the day-window convention and the statistical class are properties
+  # of the variable alone, so compute them once per distinct variable and
+  # look them up per row -- `.assign_day()` is vectorised, so it is called
+  # once per variable across all of that variable's rows (all sites),
+  # exactly matching what the old per-variable loop iteration computed
+  # before descending into its per-site/per-day inner loops.
+  convention_by_variable <- unname(vapply(variables, .daily_window_convention, character(1)))
+  stat_class_by_variable <- dict$statistical_class[match(variables, dict$variable)]
+  stat_class_by_variable[is.na(stat_class_by_variable)] <- "linear"
+
+  day <- rep(as.Date(NA), nrow(obs_hourly))
+  convention <- convention_by_variable[match(obs_hourly$variable, variables)]
+  stat_class <- stat_class_by_variable[match(obs_hourly$variable, variables)]
+  for (i in seq_along(variables)) {
+    idx <- obs_hourly$variable == variables[[i]]
+    day[idx] <- .assign_day(obs_hourly$datetime_utc[idx], tz, convention_by_variable[[i]])
+  }
+
+  ok <- obs_hourly$qc_flag == "ok" & !is.na(obs_hourly$value)
+  group <- vctrs::vec_group_id(data.frame(site_id = obs_hourly$site_id,
+                                          variable = obs_hourly$variable,
+                                          day = day, stringsAsFactors = FALSE))
+  ok_groups <- split(which(ok), group[ok])
+
+  out_rows <- lapply(ok_groups, function(idx) {
+    value <- .aggregate_value(obs_hourly$value[idx], stat_class[idx[[1]]])
+    d <- day[idx[[1]]]
+    day_label <- as.character(d)
+    conv <- convention[idx[[1]]]
+    # rain_day rows are stamped at 9am local of the label day -- the same
+    # instant `.silo_day_to_utc_instant()` (R/source-silo.R) stamps SILO's
+    # value for that day, so the two legs of history_daily share both the
+    # physical window and the timestamp. calendar_day rows are stamped at
+    # local midnight of their day.
+    wall <- if (identical(conv, "rain_day")) "09:00:00" else "00:00:00"
+    day_instant <- as.POSIXct(paste(day_label, wall), tz = tz)
+    attr(day_instant, "tzone") <- "UTC"
+
+    tibble::tibble(
+      site_id = obs_hourly$site_id[idx[[1]]],
+      datetime_utc = day_instant,
+      variable = obs_hourly$variable[idx[[1]]],
+      value = value,
+      source = obs_hourly$source[idx[[1]]],
+      method = "aggregated",
+      qc_flag = "ok"
+    )
+  })
+
+  if (length(out_rows) == 0) {
+    return(obs_hourly[0, , drop = FALSE])
+  }
+  out <- vctrs::vec_rbind(!!!out_rows)
+  out[order(out$site_id, out$variable, out$datetime_utc), , drop = FALSE]
+}

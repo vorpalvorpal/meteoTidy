@@ -28,11 +28,17 @@ with_mocked_ghcnh <- function(frame, expr, capture = new.env()) {
   force(expr)
 }
 
-# A weatherOz-style PatchedPoint daily frame. `qcode` sets the per-value SILO
-# source/quality code (see silo-qcode). Dates are plain Date; the adapter maps
-# each SILO "day" to the 9am local-clock-time instant in UTC.
+# A weatherOz-style PatchedPoint daily frame, already in the *long* shape
+# `.weatheroz_get()` returns (post `.silo_reshape_to_long()`) -- this is what
+# `with_mocked_silo()` substitutes for the seam, so `variable` must be one of
+# weatherOz's actual *response* column names (see `.silo_variable_map()`),
+# e.g. "air_tmax"/"air_tmin"/"rainfall", not the request-side value codes
+# ("max_temp"/"min_temp"/"rain") -- weatherOz (both 2.0.2 and 3.0.0) renames
+# those in its returned data. `qcode` sets the per-value SILO source/quality
+# code (see silo-qcode). Dates are plain Date; the adapter maps each SILO
+# "day" to the 9am local-clock-time instant in UTC.
 make_silo_frame <- function(dates = as.Date(c("2026-01-15", "2026-07-15")),
-                            variable = "max_temp",
+                            variable = "air_tmax",
                             value = c(30.5, 12.0),
                             qcode = c("25", "25")) {
   data.frame(

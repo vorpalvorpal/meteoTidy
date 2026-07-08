@@ -15,7 +15,11 @@ describe("climatology baseline", {
       datetime_utc = seq(as.POSIXct("2020-01-01", tz = "UTC"),
                          by = "day", length.out = 366 * 3),
       variable = "temperature_2m",
-      value = 15 + 10 * sin(2 * pi *
+      # cos (not sin) so the sinusoid peaks at day-of-year 1 (Jan 1), matching
+      # the southern-hemisphere-summer comment below and the target date;
+      # `sin()` here would peak around day-of-year ~91 (early April), making
+      # `clim$mean > 20` unreachable at any window centred on mid-January.
+      value = 15 + 10 * cos(2 * pi *
                 as.integer(format(seq(as.POSIXct("2020-01-01", tz = "UTC"),
                                       by = "day", length.out = 366 * 3), "%j")) /
                 365.25)

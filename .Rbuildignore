@@ -1,0 +1,7 @@
+^\.github$
+^SCOPING\.md$
+^IMPLEMENTER_PROMPT\.md$
+^plans$
+^_pkgdown\.yml$
+^\.lintr$
+^\.DS_Store$

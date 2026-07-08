@@ -35,6 +35,40 @@ describe("build_history_daily() SILO + AWS compositing (SCOPING §4)", {
   })
 })
 
+describe("SILO/AWS leg alignment on the site-local day", {
+  it("composites legs stamped at different instants of the same local day", {
+    # SILO rows are stamped 9am local; AWS calendar-day aggregates at local
+    # midnight. Both instants fall on the same SITE-LOCAL date but (for an
+    # Australian site) on the PREVIOUS UTC date -- a UTC-date key happens to
+    # collide here, but keying must be on the local date to hold across
+    # timezones and stamps; this pins the local-date compositing.
+    root <- local_store()
+    site <- make_test_site()   # the test site observes Sydney DST
+    silo_stamp <- as.POSIXct("2026-01-15 09:00", tz = "Australia/Sydney")
+    aws_stamp <- as.POSIXct("2026-01-15 00:00", tz = "Australia/Sydney")
+    # same absolute instants, relabelled UTC (the canonical-schema tzone)
+    attr(silo_stamp, "tzone") <- "UTC"
+    attr(aws_stamp, "tzone") <- "UTC"
+    store_write_obs(root, rbind(
+      new_obs(make_obs(n = 1, variable = "temperature_2m", value = 29,
+                       source = "silo", method = "model_fill",
+                       start = silo_stamp)),
+      new_obs(make_obs(n = 1, variable = "temperature_2m", value = 30.5,
+                       source = "site_aws", method = "aggregated",
+                       start = aws_stamp))
+    ))
+    hd <- build_history_daily(root, site,
+                              window = list(
+                                from = as.POSIXct("2026-01-13", tz = "UTC"),
+                                to = as.POSIXct("2026-01-16", tz = "UTC")
+                              ))
+    # one value for the local day, and AWS won it
+    expect_equal(nrow(hd), 1)
+    expect_equal(hd$value, 30.5)
+    expect_equal(hd$source, "site_aws")
+  })
+})
+
 describe("step-change auditability across the AWS install date (§4 caveat)", {
   it("keeps the two legs distinguishable from provenance", {
     root <- local_store()

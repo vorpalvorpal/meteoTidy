@@ -65,8 +65,10 @@ describe("Historical Forecast (shortest-lead proxy)", {
                     read_om_fixture("historical-forecast.json"))
     expect_canonical_forecast(out)
     expect_true(all(is.na(out$lead_time)))
-    expect_true(all(out$method %in% c("model_fill", NA_character_)) ||
-                  !"method" %in% names(out))
+    # A forecast never carries a `method` column (that is an observation-only
+    # provenance field). Assert its absence directly rather than reading
+    # `out$method`, which would emit a tibble "unknown column" warning.
+    expect_false("method" %in% names(out))
   })
 
   it("pins the Plan 12 contract: lead-NA rows are the proxy marker", {

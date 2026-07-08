@@ -65,4 +65,56 @@ describe("meteo_conditions()", {
     expect_false(any(duplicated(tbl$class)))
     expect_true(all(startsWith(tbl$class, "meteoTidy_")))
   })
+
+  # Audit drift-guard: every condition class actually raised via abort_meteo/
+  # warn_meteo/inform_meteo must appear in the meteo_conditions() taxonomy, so
+  # the user-facing catalogue of what can go wrong never silently drifts from
+  # what the code throws. This scans the package source, so it only runs in a
+  # dev/source tree (skipped when the source R/ dir is absent, e.g. an
+  # installed-package check).
+  it("registers every condition class the source actually raises", {
+    candidates <- c(
+      testthat::test_path("..", "..", "R"),
+      file.path(find.package("meteoTidy"), "R")
+    )
+    r_dir <- candidates[dir.exists(candidates)]
+    skip_if(length(r_dir) == 0, "package source R/ not available")
+    r_dir <- r_dir[[1]]
+
+    helpers <- c("abort_meteo", "warn_meteo", "inform_meteo")
+    walk <- function(e, acc) {
+      if (!is.call(e)) {
+        return(acc)
+      }
+      fn <- e[[1L]]
+      if (is.name(fn) && as.character(fn) %in% helpers) {
+        arg <- as.list(e)[["class"]]  # named access; safe on empty arg slots
+        if (is.character(arg) && length(arg) == 1L) acc <- c(acc, arg)
+      }
+      # Recurse positionally; tryCatch skips empty argument slots (the "missing"
+      # symbol in calls like `x[, drop = FALSE]`), which are leaves anyway.
+      for (i in seq_along(e)) {
+        acc <- tryCatch(walk(e[[i]], acc), error = function(err) acc)
+      }
+      acc
+    }
+
+    raised <- character(0)
+    for (f in list.files(r_dir, pattern = "[.]R$", full.names = TRUE)) {
+      for (e in parse(f, keep.source = FALSE)) raised <- walk(e, raised)
+    }
+    raised <- sort(unique(raised))
+
+    registered <- sub("^meteoTidy_(error|warning|message|condition)_", "",
+                      meteo_conditions()$class)
+    unregistered <- setdiff(raised, registered)
+
+    expect_equal(
+      unregistered, character(0),
+      info = paste0(
+        "Condition classes raised in R/ but missing from meteo_conditions(): ",
+        paste(unregistered, collapse = ", ")
+      )
+    )
+  })
 })

@@ -267,7 +267,7 @@ internals. Built-ins:
 | `source_bom_obs()` | official 72-h station JSON feeds + vendored weatherBOM code | hourly | Primary transport: the official per-station rolling 72-h observation JSON product feeds; web API as opt-in fallback and for geohash/location search. |
 | `source_silo()` | `weatherOz` (≥ 3.0.0) PatchedPoint / DataDrill | daily | Free; API key = email (PII, not a secret, §11). Note weatherOz 3.0.0 made breaking changes (DPIRD column restructure, BOM ag-bulletin functions removed) — pin the minimum version. SILO's per-value source/quality codes are ingested into provenance, and PatchedPoint revises values retrospectively — handled by the §9 re-fetch window. |
 | `source_ghcnh()` | `worldmet` (≥ 1.0.0) `import_ghcn_hourly()` | daily update; obs latency undocumented | Official-quality hourly obs. **GHCNh has superseded NOAA ISD** (NCEI's stated replacement): the ISD hourly feed's last update was 2025-08-24 and ISD services retire 2026-07-31. GHCNh is updated daily but publishes no real-time lag figure. Feeds `history_hourly` backfill and the fallback ladder, not the live head. |
-| `source_ecmwf()` | ECMWF Open Data | 46-day ensemble (`eefo` stream), per issue | **v1.** Fully open (CC-BY 4.0) since 2025-10-01: the 46-day extended-range ensemble is the `eefo` stream (101 members) at 0.25°. GRIB2 read via terra/GDAL's GRIB driver — needs GDAL built with **libaec/CCSDS** support (§13); heavy deps in Suggests. |
+| `source_ecmwf()` | ECMWF Open Data | medium-range ensemble (`enfo` stream), per issue | **v1 (medium-range only).** Fully open (CC-BY 4.0) since 2025-10-01. **Live-verified 2026-07-06:** the free open-data catalogue exposes `oper`/`enfo`/`waef`/`wave` (+ `aifs-*`), **not** the 46-day extended-range `eefo` stream — so the adapter ships defaulting to `enfo` (~15-day/360 h, 50 perturbed members `1..50`, no separate control) and `eefo` remains an accepted-but-currently-404 value. **46-day long-range coverage is therefore provided only by `source_openmeteo(product = "seasonal")`** (EC46+SEAS5 splice). GRIB2 read via terra/GDAL's GRIB driver — needs GDAL built with **libaec/CCSDS** support (§13); heavy deps in Suggests. |
 
 ### 5.1 BOM channels — facts as of July 2026
 
@@ -364,14 +364,21 @@ guarantee.
   unretrievable, so meteoTidy must snapshot every issuance itself (which the
   archive-on-every-sync policy already does). This is the v1 live source: JSON
   transport consistent with the other adapters.
-- **ECMWF Open Data** — the full real-time catalogue is open (CC-BY 4.0) since
-  2025-10-01, including the 46-day extended-range ensemble (the **`eefo`
-  stream**, 101 members — the medium-range `enfo` stream stops at step 360 h)
-  at 0.25° with an AWS mirror. 0.25° is the current open resolution; ECMWF has
-  flagged a future move to 0.125°/9 km, so don't hard-code the grid. **In scope
-  for v1** alongside the Open-Meteo seasonal splice: it is the only long-range
-  channel whose issue-time archive the deployment fully controls. Each GRIB2
-  file ships a JSON-lines `.index` sidecar (per-message `_offset`/`_length`)
+- **ECMWF Open Data** — the real-time catalogue is open (CC-BY 4.0) since
+  2025-10-01 at 0.25° with an AWS mirror. **Live verification (2026-07-06)
+  corrected the scope here:** the *free* open-data catalogue exposes the
+  medium-range `enfo` ensemble (~15-day/360 h, 50 perturbed members) plus
+  `oper`/`waef`/`wave` and the `aifs-*` families — but **not** the 46-day
+  extended-range `eefo` stream (which is a real MARS/dissemination stream, just
+  not in the free feed). So `source_ecmwf()` ships defaulting to `enfo`;
+  `eefo` remains an accepted parameter value that currently 404s until/unless
+  ECMWF opens it. 0.25° is the current open resolution; ECMWF has flagged a
+  future move to 0.125°/9 km, so don't hard-code the grid. **In scope for v1**
+  as a medium-range channel: it is the only channel whose issue-time archive
+  the deployment fully controls. **The 46-day long-range need is met by the
+  Open-Meteo seasonal splice alone (§5.2), not by ECMWF, in v1.** Real
+  open-data ships **one GRIB2 + `.index` pair per forecast step** (not one per
+  cycle); each `.index` is JSON-lines (per-message `_offset`/`_length`)
   enabling per-field/per-member HTTP range fetches. GRIB2 is the implementation
   cost — plan on terra/GDAL's GRIB driver rather than an ecCodes system
   dependency, but the driver needs GDAL built with **libaec/CCSDS** support
@@ -781,6 +788,20 @@ would need a policy re-check first.
   (`stars` may help). Spike this early; if the driver proves insufficient for
   the ensemble files, the adapter degrades to the Open-Meteo seasonal splice and
   full ECMWF support moves post-v1.
+  **Post-audit addendum (2026-07-07):** the libaec caveat is not hypothetical
+  -- the CRAN macOS binary `terra` (bundled GDAL 3.8.5) genuinely lacks it, and
+  a newer, source-built GDAL is not a clean substitute either: a GDAL/terra
+  built against Homebrew's current `gdal` (which does have libaec) fixed the
+  CCSDS decode but broke `terra::meta()`'s band-metadata parsing, since
+  metadata exposure drifted between GDAL 3.8.5 and 3.13.1. Rather than chase
+  GDAL version compatibility, `ecmwf_install_eccodes()` (`R/ecmwf-eccodes.R`)
+  provisions a CLI-only, decode-*only* fallback: eccodes (ECMWF's own GRIB
+  library) via a self-managed `micromamba`/conda-forge install, invoked only
+  for the point-value decode step (`grib_ls -l lat,lon,1`, a first-class
+  eccodes CLI feature) while terra/GDAL still supplies all band metadata
+  (param/unit/step/member), which never needed CCSDS decode in the first
+  place. Never triggered automatically; a one-time, explicit, cached
+  provisioning step.
 - **Timezone/DST** at the daily boundary (mitigated by matching the BOM/SILO
   9am local-clock-time convention, §3);
   **small-sample overfitting** (mitigated by enforced tier gates plus
@@ -806,9 +827,13 @@ runtime/empirical checks and site-level experiments, not design decisions.
 - **worldmet** — GHCNh support is `import_ghcn_hourly()` in `worldmet` ≥ 1.0.0,
   current CRAN 1.1.0 (§10). GHCNh is NCEI's official ISD replacement, updated
   daily, and includes non-airport stations (§13).
-- **ECMWF stream** — the 46-day open ensemble is the `eefo` stream (101
-  members), not `enfo`; delivered as GRIB2 with `.index` byte-range sidecars
-  (§5.2). terra/GDAL reads GRIB2 locally.
+- **ECMWF stream** — *superseded by live verification (2026-07-06):* the
+  46-day extended-range `eefo` stream is a real MARS stream but is **not in the
+  free open-data catalogue** (which carries `enfo`/`oper`/`waef`/`wave` +
+  `aifs-*`). `source_ecmwf()` therefore ships the medium-range `enfo` ensemble
+  (~15-day, 50 members) and the 46-day need is met by the Open-Meteo seasonal
+  splice only (§5.2). Real open-data ships one GRIB2 + `.index` pair **per
+  step**; terra/GDAL reads GRIB2 locally (given a libaec/CCSDS build).
 
 **Remaining runtime/empirical checks:**
 1. **Single Runs retention** — the docs do not document whether every issue

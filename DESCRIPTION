@@ -1,0 +1,149 @@
+Package: meteoTidy
+Title: Quality Control, Correction, and Archiving of Meteorological Data
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Robin", "Shannon", , "32329438+vorpalvorpal@users.noreply.github.com",
+           role = c("aut", "cre")),
+    person("Maurits", "Evers", role = "ctb")
+  )
+Description: Ingests meteorological observations and forecasts from multiple
+    sources, applies quality control, gap-filling, and bias correction, and
+    archives the results as a canonical, versioned Parquet store. Unlike
+    general-purpose API clients such as 'weatherOz', 'meteoTidy' does not
+    itself implement provider transports for every source; it wraps
+    'weatherOz' for 'SILO' access and layers curation, calibration, and a
+    tidy read API on top of raw observations and forecasts from several
+    providers.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Language: en-AU
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/testthat/edition: 3
+Imports:
+    arrow,
+    cli,
+    crch,
+    digest,
+    dplyr,
+    httr2,
+    imputeTS,
+    jsonlite,
+    readr,
+    rlang,
+    S7,
+    scoringRules,
+    tibble,
+    units,
+    vctrs,
+    weatherOz (>= 3.0.0),
+    withr,
+    worldmet (>= 1.0.0),
+    xml2,
+    yaml
+Suggests:
+    curl,
+    DBI,
+    dbplyr,
+    duckdb,
+    httptest2,
+    keyring,
+    knitr,
+    lintr,
+    rmarkdown,
+    terra,
+    testthat (>= 3.0.0)
+SystemRequirements: eccodes (optional; https://confluence.ecmwf.int/display/ECC
+    -- only needed as a CLI-only fallback CCSDS/AEC decoder for source_ecmwf()
+    on a GDAL build without libaec support; see ecmwf_install_eccodes(), which
+    provisions it via micromamba/conda-forge if not already on PATH)
+VignetteBuilder: knitr
+Collate:
+    'adapter-mapping.R'
+    'adapter.R'
+    'aggregate.R'
+    'store-forecast.R'
+    'source-file.R'
+    'store-obs.R'
+    'site.R'
+    'site-list.R'
+    'pipeline.R'
+    'archive-forecasts.R'
+    'bom-breaker-state.R'
+    'bom-parse.R'
+    'bom-transport.R'
+    'conditions.R'
+    'config.R'
+    'connect.R'
+    'consistency-pass.R'
+    'verify.R'
+    'correct.R'
+    'correct-forecast.R'
+    'correct-physical.R'
+    'dict-builtin.R'
+    'dict.R'
+    'donor-ladder.R'
+    'http.R'
+    'ecmwf-eccodes.R'
+    'ecmwf-index.R'
+    'enums.R'
+    'fill-tiers.R'
+    'fill-treatments.R'
+    'fill.R'
+    'grib-read.R'
+    'history-products.R'
+    'source-ghcnh.R'
+    'met-backfill.R'
+    'met-table.R'
+    'met-table-hash.R'
+    'met-ingest.R'
+    'store.R'
+    'met-refit.R'
+    'store-watermark.R'
+    'qc.R'
+    'met-sync-daily.R'
+    'met-sync-live.R'
+    'met-table-dplyr.R'
+    'read-api.R'
+    'met-wide.R'
+    'meteoTidy-package.R'
+    'model-only.R'
+    'openmeteo-endpoints.R'
+    'openmeteo-parse.R'
+    'physics-constraints.R'
+    'qc-log.R'
+    'qc-rules.R'
+    'qc-solar.R'
+    'qc-spatial.R'
+    'schema-forecast.R'
+    'schema-obs.R'
+    'schema.R'
+    'secrets.R'
+    'shrinkage.R'
+    'silo-disagg.R'
+    'silo-qcode.R'
+    'site-yaml.R'
+    'source-bom-forecast.R'
+    'source-bom-obs.R'
+    'source-openmeteo.R'
+    'source-ecmwf.R'
+    'source-rest.R'
+    'source-silo.R'
+    'station-resolve.R'
+    'store-calib.R'
+    'store-connect.R'
+    'store-obs-transport.R'
+    'tier-emos.R'
+    'tier-mean-bias.R'
+    'tier-qmap.R'
+    'tier-select.R'
+    'transfer.R'
+    'units.R'
+    'utils.R'
+    'vendor-weatherbom.R'
+    'verify-baselines.R'
+    'verify-bootstrap.R'
+    'verify-calibration.R'
+    'verify-scores.R'
+    'verify-verdict.R'
+    'wind-uv.R'

@@ -1,23 +1,28 @@
 # Plan 16 — met_sync_live() (hourly, best-effort). Everything mocked; frozen clock.
+#
+# Plan 17 item 1c: correction is no longer applied inside met_sync_live() (it
+# is applied at SERVE time instead, R/correct-forecast.R), so `correct_apply`
+# is not mocked/asserted here anymore -- see test-plan17-serve-correction.R's
+# "met_sync_live no longer computes-and-discards corrections" spec for the
+# positive assertion that it is never called.
 
-describe("live window is QC'd, filled, corrected, and forecasts archived", {
+describe("live window is QC'd, filled, and forecasts archived", {
   it("runs the live pipeline and advances the live watermark", {
     root <- local_store()
     site <- make_test_site(store_root = root)
     now <- as.POSIXct("2026-01-01 12:00", tz = "UTC")
     local_frozen_clock(now)
     mock_acquisition()
-    ran <- new.env(); ran$qc <- 0L; ran$fill <- 0L; ran$correct <- 0L; ran$arch <- 0L
+    ran <- new.env(); ran$qc <- 0L; ran$fill <- 0L; ran$arch <- 0L
     testthat::local_mocked_bindings(
       qc_run = function(...) { ran$qc <- ran$qc + 1L; invisible() },
       fill_run = function(...) { ran$fill <- ran$fill + 1L; invisible() },
-      correct_apply = function(...) { ran$correct <- ran$correct + 1L; make_obs(n = 1) },
       archive_forecasts = function(...) { ran$arch <- ran$arch + 1L
                                           tibble::tibble(note = "ok") }
     )
     status <- met_sync_live(site, now = now, config = pipeline_config(root))
     expect_equal(status$status, "ok")
-    expect_true(ran$qc > 0 && ran$fill > 0 && ran$correct > 0 && ran$arch > 0)
+    expect_true(ran$qc > 0 && ran$fill > 0 && ran$arch > 0)
     wm <- store_get_watermark(root, "test", "observations", "live")
     expect_false(is.na(wm))
   })
@@ -29,7 +34,6 @@ describe("live window is QC'd, filled, corrected, and forecasts archived", {
     calls <- mock_acquisition()
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
-      correct_apply = function(...) make_obs(n = 1),
       archive_forecasts = function(...) tibble::tibble(note = "ok")
     )
     met_sync_live(site, now = now,
@@ -48,7 +52,6 @@ describe("graceful degradation on a dead channel", {
     mock_acquisition(fail_sources = "site_aws")
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
-      correct_apply = function(...) make_obs(n = 1),
       archive_forecasts = function(...) tibble::tibble(note = "ok")
     )
     status <- met_sync_live(met_sites(list(s1, s2)), now = now,

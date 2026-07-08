@@ -64,7 +64,7 @@ describe("multi-site processing with per-site isolation", {
     calls <- new.env()
     testthat::local_mocked_bindings(
       .acquire_obs = function(source, site, window, now = NULL, ...) {
-        if (site_ids(site) %||% site@site_id == "site_1")
+        if (site_id(site) == "site_1")
           abort_meteo("dead", class = "http_gone")
         new_obs(make_obs(n = 2, site_id = "site_2"))
       },
@@ -89,6 +89,23 @@ describe("for_each_site() error isolation", {
     expect_equal(nrow(status), 2)
     expect_true(any(status$status == "error"))
     expect_true(any(status$status == "ok"))
+  })
+
+  it("keeps per-site results aligned when a mid-list site fails", {
+    # Regression: appending to the result list with `[[i]] <- NULL` was a
+    # no-op that shortened the list -- with 3 sites and a mid-list failure,
+    # tibble() then errored on the size mismatch (and with 2 sites the lone
+    # surviving result was silently recycled onto the failed site's row).
+    sites <- make_test_sites(3)
+    status <- for_each_site(sites, function(site) {
+      if (site@site_id == "site_2") stop("boom")
+      paste0("done_", site@site_id)
+    }, on_error = "isolate")
+    expect_equal(nrow(status), 3)
+    expect_equal(status$status, c("ok", "error", "ok"))
+    expect_null(status$result[[2]])
+    expect_equal(status$result[[1]], "done_site_1")
+    expect_equal(status$result[[3]], "done_site_3")
   })
 
   it("re-raises under on_error = 'stop'", {
