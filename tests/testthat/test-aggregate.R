@@ -82,8 +82,15 @@ describe("aggregate_daily() on the local-day boundary (DST-aware)", {
     after_9am$value <- 7
 
     daily <- aggregate_daily(rbind(before_9am, after_9am), site)
-    expected_15 <- as.POSIXct("2026-01-15 09:00", tz = "Australia/Sydney")
-    expected_16 <- as.POSIXct("2026-01-16 09:00", tz = "Australia/Sydney")
+    # relabel to UTC (same tzone as daily$datetime_utc) so the comparison does
+    # not trip base::Ops.POSIXt's "inconsistent tzone" warning -- these are the
+    # same absolute instants either way.
+    to_utc <- function(x) {
+      attr(x, "tzone") <- "UTC"
+      x
+    }
+    expected_15 <- to_utc(as.POSIXct("2026-01-15 09:00", tz = "Australia/Sydney"))
+    expected_16 <- to_utc(as.POSIXct("2026-01-16 09:00", tz = "Australia/Sydney"))
     expect_equal(daily$value[daily$datetime_utc == expected_15], 4)
     expect_equal(daily$value[daily$datetime_utc == expected_16], 7)
   })
