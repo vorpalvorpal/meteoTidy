@@ -50,20 +50,50 @@
 # row's own (uncorrected) value" rule, just generalised to an arbitrary
 # `times`/`variables` pair rather than assuming obs-shaped
 # `datetime_utc`/`variable` columns.
+# The minimum hourly-cell sample size below which the DOY x hour climatology is
+# not trusted and the coarser daily-DOY climatology is used instead. A real
+# hourly record gives ~tens-to-hundreds of samples per (DOY-window, hour) cell
+# over a few years; this floor just guards the earliest, sparse days.
+.climatology_hourly_min_n <- function() 5L
+
 .climatology_series <- function(store_root, site, times, variables, fallback) {
   if (length(times) == 0) {
     return(fallback)
   }
 
   window <- list(from = min(times) - as.difftime(1095, units = "days"), to = max(times))
-  hist <- build_history_daily(store_root, site, window)
+  hist_daily <- build_history_daily(store_root, site, window)
+
+  # Only pay for an hourly climatology when the series actually carries
+  # sub-daily structure to resolve (a daily product is one hour-of-day, so the
+  # daily-DOY climatology already suffices and the extra store read is skipped
+  # -- Plan 17 follow-up: the diurnal-cycle fix the daily-only shrink target
+  # flattened).
+  hours <- as.integer(format(times, "%H", tz = "UTC"))
+  hist_hourly <- if (length(unique(hours)) > 1) {
+    build_history_hourly(store_root, site, window)
+  } else {
+    NULL
+  }
 
   vapply(seq_along(times), function(i) {
-    if (nrow(hist) == 0) {
-      return(fallback[[i]])
+    # 1. DOY x hour-of-day climatology from the hourly record (diurnal-aware),
+    #    when enough samples fall in the (DOY-window, hour) cell;
+    if (!is.null(hist_hourly) && nrow(hist_hourly) > 0) {
+      hourly <- baseline_climatology(hist_hourly, times[[i]], variables[[i]], hour_window = 1L)
+      if (!is.na(hourly$mean) && hourly$n >= .climatology_hourly_min_n()) {
+        return(hourly$mean)
+      }
     }
-    base <- baseline_climatology(hist, times[[i]], variables[[i]])
-    if (is.na(base$mean)) fallback[[i]] else base$mean
+    # 2. else the coarser daily-DOY climatology (gap-free SILO-based history);
+    if (nrow(hist_daily) > 0) {
+      daily <- baseline_climatology(hist_daily, times[[i]], variables[[i]])
+      if (!is.na(daily$mean)) {
+        return(daily$mean)
+      }
+    }
+    # 3. else no history to pool against -- the row's own (uncorrected) value.
+    fallback[[i]]
   }, numeric(1))
 }
 

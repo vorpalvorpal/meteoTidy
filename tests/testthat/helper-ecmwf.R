@@ -17,31 +17,39 @@ ecmwf_index_lines <- function() {
   readLines(ecmwf_index_path(), warn = FALSE)
 }
 
-# Skip a GRIB test unless terra AND the real fixture are both available.
-# Opening a GRIB file and reading its band *metadata* never requires decoding
-# pixel data (see R/grib-read.R's header note), so this gate alone is enough
-# for `grib_open()`/`grib_field_table()` tests, which work regardless of
-# whether the local GDAL build can decode CCSDS/AEC compression.
-skip_unless_grib_ready <- function() {
-  testthat::skip_if_not_installed("terra")
-  testthat::skip_if_not(file.exists(ecmwf_grib_path()),
-                        "genuine ECMWF GRIB2 fixture not recorded yet")
+# Canned `grib_ls -j -p shortName,step,perturbationNumber -l lat,lon,1` output
+# for the committed 3-message 2t fixture (members 1-3, step 24h, native Kelvin).
+# Lets `grib_point_table()`'s JSON parse and the `fetch_forecast()` read path be
+# exercised deterministically on every platform, with no real eccodes install
+# and no GDAL -- exactly the GDAL-version-fragile contract Plan 18 Part A moved
+# off terra to make version-independent.
+ecmwf_grib_ls_json <- function() {
+  paste0(
+    "[",
+    '{"keys":{"shortName":"2t","step":"24","perturbationNumber":1},',
+    '"method":"nearest","neighbours":[{"index":1,"latitude":-34.75,',
+    '"longitude":148.2,"distance":0,"distance_unit":"km","value":295.406,"unit":"K"}]},',
+    '{"keys":{"shortName":"2t","step":"24","perturbationNumber":2},',
+    '"method":"nearest","neighbours":[{"index":1,"latitude":-34.75,',
+    '"longitude":148.2,"distance":0,"distance_unit":"km","value":295.925,"unit":"K"}]},',
+    '{"keys":{"shortName":"2t","step":"24","perturbationNumber":3},',
+    '"method":"nearest","neighbours":[{"index":1,"latitude":-34.75,',
+    '"longitude":148.2,"distance":0,"distance_unit":"km","value":294.8,"unit":"K"}]}',
+    "]"
+  )
 }
 
-# Whether *this* GDAL build can actually decode the fixture's CCSDS/AEC
-# compressed pixel data (as opposed to just its headers/metadata). Real ECMWF
-# GRIB2 messages use this compression, and GDAL needs libaec support to read
-# it (OSGeo/gdal#8108) -- many CRAN binary builds do not have it. Tests that
-# need real decoded values are gated on this (skipping, not failing, when
-# unsupported); tests of the *guard* (`.grib_check_ccsds_support()`) and of
-# `fetch_forecast()`'s degradation behaviour instead assert whichever outcome
-# this probe says is true, so they are meaningful either way this comes out.
-ecmwf_ccsds_supported <- function() {
-  skip_unless_grib_ready()
-  tryCatch({
-    vals <- grib_extract_point(grib_open(ecmwf_grib_path()), lat = 0, lon = 0)
-    length(vals) > 0 && all(is.finite(vals))
-  }, error = function(e) FALSE, warning = function(w) FALSE)
+# A `grib_point_table()` stand-in for the committed 2t fixture: the
+# deterministic field table `fetch_forecast()` would get from eccodes, without
+# needing eccodes installed. Native Kelvin (eccodes does not auto-convert to
+# Celsius the way GDAL's GRIB driver did).
+mock_grib_point_table_2t <- function() {
+  function(path, lat, lon) {
+    tibble::tibble(
+      band = 1:3, param = "2t", unit = "K", step = "24",
+      member = c(1L, 2L, 3L), value = c(295.406, 295.925, 294.8)
+    )
+  }
 }
 
 # A `.http_get()` mock for the range-download seam that hands back the
@@ -68,12 +76,11 @@ mock_ecmwf_http_get <- function() {
 }
 
 # Skip a test unless a real, usable eccodes install is present (either
-# provisioned via ecmwf_install_eccodes() or already on PATH). The
-# eccodes-based decode fallback (R/ecmwf-eccodes.R) is otherwise unit-tested
-# against mocked system2()/canned JSON; this gate is for the genuine,
-# end-to-end "does grib_ls actually decode our real fixture" tests, mirroring
-# skip_unless_grib_ready()/ecmwf_ccsds_supported()'s pattern -- skip cleanly,
-# never fail, when the environment doesn't have it.
+# provisioned via ecmwf_install_eccodes() or already on PATH). The eccodes GRIB
+# reader (R/grib-read.R) is otherwise unit-tested against canned `grib_ls -j`
+# JSON (ecmwf_grib_ls_json()); this gate is for the genuine, end-to-end "does
+# grib_ls actually decode our real CCSDS fixture" tests -- skip cleanly, never
+# fail, when the environment doesn't have eccodes installed.
 skip_unless_eccodes_ready <- function() {
   testthat::skip_if_not(.have_eccodes(), "eccodes (grib_ls) is not available in this environment")
 }

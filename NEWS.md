@@ -1,5 +1,19 @@
 # meteoTidy (development version)
 
+- `source_ecmwf()` now reads GRIB2 **only through eccodes** (terra/GDAL dropped).
+  eccodes reads ECMWF-native `shortName`/`step`/`perturbationNumber`/`units` and
+  decodes CCSDS natively — removing the GDAL-version metadata drift that made the
+  old path fragile. **eccodes is now required for `source_ecmwf()`** (run
+  `ecmwf_install_eccodes()`, or install `libeccodes-tools`); `terra` is no longer
+  a dependency.
+- Gap-fill now **derives thermodynamically-coupled variables from co-observed
+  inputs** (relative humidity ↔ dewpoint ↔ temperature) exactly, in a
+  derivation tier that runs **before** the donor tier — so an exact physical
+  computation pre-empts an inter-station donor fetch (`method = "derived"`).
+- Serve-time forecast shrinkage now uses a **day-of-year × hour-of-day**
+  climatology target for sub-daily forecasts (built from `history_hourly`),
+  instead of collapsing every hour to the daily mean; it falls back to the
+  daily day-of-year climatology where no hourly history exists.
 - Initial scaffolding: package infrastructure, `testthat` 3 harness, CI, the
   classed condition system (`abort_meteo()`, `warn_meteo()`, `inform_meteo()`,
   `meteo_conditions()`), and the injectable clock seam (`.now()`).

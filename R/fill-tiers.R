@@ -261,27 +261,13 @@ fill_macro <- function(obs, model, dict = met_variables()) {
   var_obs
 }
 
-# Route one variable's series (already time-ordered) to the right tier(s),
-# gap-run by gap-run, per its statistical/measurability class.
-.fill_tier_one_variable <- function(var_obs, variable, dict, model, donors, site) {
-  row <- dict[match(variable, dict$variable), , drop = FALSE]
-  is_model_only <- isTRUE(row$measurability_class == "model_only")
-  stat_class <- row$statistical_class
-
-  # Model-only variables ALWAYS skip straight to macro/model fill -- never
-  # consult the donor ladder, regardless of gap length (SCOPING section 7.3)
-  # -- and every value (not just gap rows) is the raw model value, since
-  # there is no site-measured truth for these variables at all.
-  if (is_model_only) {
-    return(.fill_model_only(var_obs, model))
-  }
-
-  gap_idx <- which(is.na(var_obs$value))
-  if (length(gap_idx) == 0) {
-    return(var_obs)
-  }
-
-  runs <- .gap_runs(!is.na(match(seq_len(nrow(var_obs)), gap_idx)))
+# Route one variable's (already time-ordered) gaps into the micro-eligible
+# set (short gaps in a smooth class -> interpolation tier) versus everything
+# else (`other_idx`: long gaps, and any gap in a non-micro-eligible class),
+# which is handled by the derive/donor/model tiers. Returns integer index
+# vectors into the ordered series.
+.route_variable_gaps <- function(var_obs, stat_class) {
+  runs <- .gap_runs(is.na(var_obs$value))
   micro_eligible <- stat_class %in% .micro_eligible_classes()
   max_gap_h <- .micro_max_gap_hours()
 
@@ -297,48 +283,55 @@ fill_macro <- function(obs, model, dict = met_variables()) {
       other_idx <- c(other_idx, run)
     }
   }
+  list(micro_idx = micro_idx, other_idx = other_idx)
+}
 
-  if (length(micro_idx) > 0) {
-    micro_result <- fill_micro(var_obs, dict = dict, site = site)
-    var_obs[micro_idx, ] <- micro_result[micro_idx, ]
+# The donor (medium) then model (macro) tiers for one variable's series,
+# targeting exactly the `other_idx` gaps routed away from micro (so a short
+# micro-eligible gap that micro could not fill never leaks into a donor
+# fetch). Any of those gaps already resolved by an earlier tier (micro or the
+# derivation tier) is skipped via the `still_na` re-check.
+.fill_variable_donor_model <- function(var_obs, other_idx, dict, model, donors, site) {
+  if (length(other_idx) == 0) {
+    return(var_obs)
   }
 
-  if (length(other_idx) > 0) {
-    still_na <- other_idx[is.na(var_obs$value[other_idx])]
-    if (length(still_na) > 0 && !is.null(donors) && length(donors) > 0) {
-      medium_result <- fill_medium(var_obs, donors = donors, site = site, dict = dict)
-      var_obs[still_na, ] <- medium_result[still_na, ]
-    }
-    still_na <- other_idx[is.na(var_obs$value[other_idx])]
-    if (length(still_na) > 0 && !is.null(model)) {
-      macro_result <- fill_macro(var_obs, model = model, dict = dict)
-      var_obs[still_na, ] <- macro_result[still_na, ]
-    }
+  still_na <- other_idx[is.na(var_obs$value[other_idx])]
+  if (length(still_na) > 0 && !is.null(donors) && length(donors) > 0) {
+    medium_result <- fill_medium(var_obs, donors = donors, site = site, dict = dict)
+    var_obs[still_na, ] <- medium_result[still_na, ]
   }
-
+  still_na <- other_idx[is.na(var_obs$value[other_idx])]
+  if (length(still_na) > 0 && !is.null(model)) {
+    macro_result <- fill_macro(var_obs, model = model, dict = dict)
+    var_obs[still_na, ] <- macro_result[still_na, ]
+  }
   var_obs
 }
 
-#' Route each gap to the right fill tier (micro/medium/macro)
+#' Route each gap to the right fill tier (micro/derive/medium/macro)
 #'
-#' The top-level fill router: for each variable present in `obs`, finds
-#' contiguous gaps (runs of `NA`/`"missing"`-flagged `value` rows) and routes
-#' each to a tier by gap length and the variable's `statistical_class`/
-#' `measurability_class` (SCOPING section 6):
+#' The top-level fill router. It runs the fill ladder in tier order so that a
+#' cheaper, less-biased tier always pre-empts a more expensive one. Per gap the
+#' order is **micro -> derive -> donor -> model**:
 #'
 #' - **model-only** variables (`measurability_class == "model_only"`) always
 #'   skip straight to the macro/model tier -- the donor ladder
-#'   (`rank_donors()`) is never consulted for them, regardless of gap length.
-#' - short gaps (<= ~3 h) in smooth classes (`linear`/`bounded`/`circular`/
-#'   `clear_sky_indexed`) go to the micro (interpolation) tier.
-#' - `intermittent` (rain) gaps are never routed to micro, at any length --
-#'   they go straight to the donor/model tiers.
-#' - longer gaps, and any gap for a class not micro-eligible, are routed to
-#'   the medium (donor) tier if `donors` is supplied, else the macro (model)
-#'   tier if `model` is supplied.
+#'   (`rank_donors()`) is never consulted for them, regardless of gap length,
+#'   and they are never derivable from surface obs.
+#' - **micro (interpolation)** takes short gaps (<= ~3 h) in smooth classes
+#'   (`linear`/`bounded`/`circular`/`clear_sky_indexed`). `intermittent` (rain)
+#'   gaps are never routed to micro, at any length.
+#' - **derive (exact physics)** then fills any remaining gap in a coupled
+#'   variable (RH <-> dewpoint <-> temperature) wherever every input is
+#'   co-observed and QC-clean at that site + timestamp (see `fill_derive()`),
+#'   stamping `method = "derived"`. Running before the donor tier means an
+#'   exact, unbiased derivation pre-empts a donor fetch.
+#' - **donor (medium)** then fills remaining long gaps from the best donor if
+#'   `donors` is supplied, and finally **model (macro)** from `model`.
 #'
 #' Every filled row's `qc_flag` becomes `"ok"` (never the gap's inherited
-#' `"missing"`/`"fail"`) and `method` becomes one of `"imputed"`/
+#' `"missing"`/`"fail"`) and `method` becomes one of `"imputed"`/`"derived"`/
 #' `"donor_fill"`/`"model_fill"` (never `"measured"`).
 #'
 #' @param obs A canonical long obs tibble, one or more variables.
@@ -354,17 +347,57 @@ fill_macro <- function(obs, model, dict = met_variables()) {
 #' @noRd
 fill_tier <- function(obs, dict = met_variables(), model = NULL, donors = NULL, site = NULL) {
   variables <- unique(obs$variable)
-  out <- obs[0, , drop = FALSE]
+  if (length(variables) == 0) {
+    return(obs)
+  }
 
-  for (variable in variables) {
+  # Phase 1 -- micro tier (short smooth gaps), per variable. Also records, per
+  # variable, whether it is model-only and which gaps were routed AWAY from
+  # micro (`other_idx`), so the later donor/model phase targets exactly those.
+  micro_parts <- vector("list", length(variables))
+  other_idx_by_var <- vector("list", length(variables))
+  is_model_only <- stats::setNames(logical(length(variables)), variables)
+
+  for (i in seq_along(variables)) {
+    variable <- variables[[i]]
     var_obs <- obs[obs$variable == variable, , drop = FALSE]
+    var_obs <- var_obs[order(var_obs$datetime_utc), , drop = FALSE]
+    row <- dict[match(variable, dict$variable), , drop = FALSE]
+    model_only <- isTRUE(row$measurability_class == "model_only")
+    is_model_only[[variable]] <- model_only
+
+    if (!model_only) {
+      route <- .route_variable_gaps(var_obs, row$statistical_class)
+      if (length(route$micro_idx) > 0) {
+        micro_result <- fill_micro(var_obs, dict = dict, site = site)
+        var_obs[route$micro_idx, ] <- micro_result[route$micro_idx, ]
+      }
+      other_idx_by_var[[i]] <- route$other_idx
+    }
+    micro_parts[[i]] <- var_obs
+  }
+  micro_frame <- do.call(vctrs::vec_rbind, unname(micro_parts))
+
+  # Phase 2 -- derive tier (exact physics), cross-variable, on the full frame.
+  derived_frame <- fill_derive(micro_frame, dict = dict)
+
+  # Phase 3 -- donor (medium) then model (macro) tiers, per variable.
+  out <- obs[0, , drop = FALSE]
+  for (i in seq_along(variables)) {
+    variable <- variables[[i]]
+    var_obs <- derived_frame[derived_frame$variable == variable, , drop = FALSE]
     var_obs <- var_obs[order(var_obs$datetime_utc), , drop = FALSE]
     model_var <- if (!is.null(model)) model[model$variable == variable, , drop = FALSE] else model
 
-    filled <- .fill_tier_one_variable(
-      var_obs, variable, dict = dict, model = model_var, donors = donors, site = site
-    )
-    out <- vctrs::vec_rbind(out, filled)
+    var_obs <- if (is_model_only[[variable]]) {
+      .fill_model_only(var_obs, model_var)
+    } else {
+      .fill_variable_donor_model(
+        var_obs, other_idx_by_var[[i]],
+        dict = dict, model = model_var, donors = donors, site = site
+      )
+    }
+    out <- vctrs::vec_rbind(out, var_obs)
   }
   out
 }

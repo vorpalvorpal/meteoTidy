@@ -21,10 +21,11 @@ A \code{source_ecmwf} (\code{met_adapter} subclass) S7 object.
 }
 \description{
 \code{source_ecmwf()} builds a \code{\link[=met_adapter]{met_adapter()}} that fetches ECMWF's Open Data
-ensemble forecast as GRIB2, via \code{terra}/GDAL's GRIB driver
-(\code{R/grib-read.R}). \code{terra} is a \strong{Suggests}-only dependency: every fetch
-path checks for it first (see the internal \code{.have_terra()}) and aborts a
-guided \code{"terra_required"} error -- pointing at
+ensemble forecast as GRIB2, read via \strong{eccodes} (ECMWF's own GRIB library;
+\code{R/grib-read.R}). eccodes is a \strong{hard requirement} for this adapter: every
+fetch path checks for it first (see the internal \code{.have_eccodes()}) and
+aborts a guided \code{"eccodes_required"} error -- pointing at
+\code{\link[=ecmwf_install_eccodes]{ecmwf_install_eccodes()}} to provision it, or
 \code{source_openmeteo(product = "seasonal")} as the no-GRIB degradation path
 (SCOPING §5.2) -- if it is unavailable.
 }
