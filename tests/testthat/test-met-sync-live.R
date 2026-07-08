@@ -13,12 +13,23 @@ describe("live window is QC'd, filled, and forecasts archived", {
     now <- as.POSIXct("2026-01-01 12:00", tz = "UTC")
     local_frozen_clock(now)
     mock_acquisition()
-    ran <- new.env(); ran$qc <- 0L; ran$fill <- 0L; ran$arch <- 0L
+    ran <- new.env()
+    ran$qc <- 0L
+    ran$fill <- 0L
+    ran$arch <- 0L
     testthat::local_mocked_bindings(
-      qc_run = function(...) { ran$qc <- ran$qc + 1L; invisible() },
-      fill_run = function(...) { ran$fill <- ran$fill + 1L; invisible() },
-      archive_forecasts = function(...) { ran$arch <- ran$arch + 1L
-                                          tibble::tibble(note = "ok") }
+      qc_run = function(...) {
+        ran$qc <- ran$qc + 1L
+        invisible()
+      },
+      fill_run = function(...) {
+        ran$fill <- ran$fill + 1L
+        invisible()
+      },
+      archive_forecasts = function(...) {
+        ran$arch <- ran$arch + 1L
+        tibble::tibble(note = "ok")
+      }
     )
     status <- met_sync_live(site, now = now, config = pipeline_config(root))
     expect_equal(status$status, "ok")
@@ -36,9 +47,11 @@ describe("live window is QC'd, filled, and forecasts archived", {
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
       archive_forecasts = function(...) tibble::tibble(note = "ok")
     )
-    met_sync_live(site, now = now,
-                  config = pipeline_config(root, obs_sources = c("site_aws", "bom_obs")))
-    expect_false("ghcnh" %in% calls$obs)      # GHCNh excluded from the live head
+    met_sync_live(site,
+      now = now,
+      config = pipeline_config(root, obs_sources = c("site_aws", "bom_obs"))
+    )
+    expect_false("ghcnh" %in% calls$obs) # GHCNh excluded from the live head
   })
 })
 
@@ -54,8 +67,10 @@ describe("graceful degradation on a dead channel", {
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
       archive_forecasts = function(...) tibble::tibble(note = "ok")
     )
-    status <- met_sync_live(met_sites(list(s1, s2)), now = now,
-                            config = pipeline_config(root))
+    status <- met_sync_live(met_sites(list(s1, s2)),
+      now = now,
+      config = pipeline_config(root)
+    )
     expect_equal(nrow(status), 2)
     expect_true(all(status$status %in% c("ok", "degraded")))
     expect_true(any(status$status == "degraded"))

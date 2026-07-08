@@ -20,9 +20,9 @@ describe("climatology baseline", {
       # `sin()` here would peak around day-of-year ~91 (early April), making
       # `clim$mean > 20` unreachable at any window centred on mid-January.
       value = 15 + 10 * cos(2 * pi *
-                as.integer(format(seq(as.POSIXct("2020-01-01", tz = "UTC"),
-                                      by = "day", length.out = 366 * 3), "%j")) /
-                365.25)
+                              as.integer(format(seq(as.POSIXct("2020-01-01", tz = "UTC"),
+                                                    by = "day", length.out = 366 * 3), "%j")) /
+                              365.25)
     )
     clim <- baseline_climatology(hist, target = as.POSIXct("2026-01-15",
                                                            tz = "UTC"),

@@ -13,7 +13,7 @@
 # wind is advertised-but-silently-dropped.
 #
 # Required seam (see IMPLEMENTER_PROMPT.md, "ECMWF u/v"): a pure function
-#   .ecmwf_uv_to_wind(field_tbl, values) -> tibble
+#   .ecmwf_uv_to_wind(field_tbl, values) returns a tibble
 # where `field_tbl` is a grib_field_table()-shaped tibble (columns band, param,
 # unit, step, member) and `values` is the per-band extracted value vector
 # (aligned to field_tbl$band). It pairs "10u"/"10v" bands on (step, member),

@@ -9,7 +9,8 @@ describe("disaggregate_silo() conservation", {
       source = "silo", method = "measured", qc_flag = "ok"
     )
     # a diurnal shape from a sub-daily reference (need not integrate to 1 itself)
-    shape <- rep(1, 24); shape[14:17] <- 4         # afternoon-weighted
+    shape <- rep(1, 24)
+    shape[14:17] <- 4 # afternoon-weighted
     hourly <- disaggregate_silo(daily, shape = shape)
     expect_equal(sum(hourly$value), 12.0, tolerance = 1e-9)
     expect_true(all(hourly$method == "disaggregated"))
@@ -36,7 +37,7 @@ describe("disaggregate_silo() conservation", {
       value = c(12.0, 28.0),
       source = "silo", method = "measured", qc_flag = "ok"
     )
-    shape <- (sin(seq(0, 2 * pi, length.out = 24)) + 1) / 2   # 0..1 diurnal
+    shape <- (sin(seq(0, 2 * pi, length.out = 24)) + 1) / 2 # 0..1 diurnal
     hourly <- disaggregate_silo(daily, shape = shape)
     temp <- hourly$value[hourly$variable == "temperature_2m"]
     expect_equal(min(temp), 12.0, tolerance = 1e-6)

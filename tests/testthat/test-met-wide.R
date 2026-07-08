@@ -8,9 +8,12 @@ describe("met_wide() §3.1 contract", {
       met_forecast_archive = function(...) make_forecast(n = 3)
     )
     out <- met_wide(site,
-                    window = list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                                  to = as.POSIXct("2026-01-02", tz = "UTC")),
-                    kind = "record", now = as.POSIXct("2026-01-01", tz = "UTC"))
+      window = list(
+        from = as.POSIXct("2026-01-01", tz = "UTC"),
+        to = as.POSIXct("2026-01-02", tz = "UTC")
+      ),
+      kind = "record", now = as.POSIXct("2026-01-01", tz = "UTC")
+    )
     expect_s3_class(out, "met_table")
     # time renamed at this outer boundary only
     expect_true("time" %in% names(out))
@@ -29,9 +32,12 @@ describe("met_wide() §3.1 contract", {
       met_record = function(...) make_obs(n = 3, variable = "temperature_2m")
     )
     out <- met_wide(site,
-                    window = list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                                  to = as.POSIXct("2026-01-02", tz = "UTC")),
-                    kind = "record", variables = c("temperature_2m", "cape"))
+      window = list(
+        from = as.POSIXct("2026-01-01", tz = "UTC"),
+        to = as.POSIXct("2026-01-02", tz = "UTC")
+      ),
+      kind = "record", variables = c("temperature_2m", "cape")
+    )
     expect_true("cape" %in% names(out))
     expect_true(all(is.na(out$cape)))
   })
@@ -42,9 +48,12 @@ describe("met_wide() §3.1 contract", {
       met_record = function(...) make_obs(n = 3, variable = "temperature_2m")
     )
     out <- met_wide(site,
-                    window = list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                                  to = as.POSIXct("2026-01-02", tz = "UTC")),
-                    kind = "record")
+      window = list(
+        from = as.POSIXct("2026-01-01", tz = "UTC"),
+        to = as.POSIXct("2026-01-02", tz = "UTC")
+      ),
+      kind = "record"
+    )
     expect_setequal(setdiff(names(out), "time"), .met31_variables())
     expect_true(all(is.na(out$boundary_layer_height)))
   })
@@ -58,9 +67,12 @@ describe("met_wide() §3.1 contract", {
     fc <- make_forecast(n = 2, variable = "temperature_2m")
     store_write_forecast(root, new_forecast(fc))
     out <- met_wide(site,
-                    window = list(from = fc$valid_time[1] - 3600,
-                                  to = fc$valid_time[2] + 3600),
-                    kind = "forecast", variables = c("temperature_2m", "cape"))
+      window = list(
+        from = fc$valid_time[1] - 3600,
+        to = fc$valid_time[2] + 3600
+      ),
+      kind = "forecast", variables = c("temperature_2m", "cape")
+    )
     expect_true(all(is.na(out$cape)))
     expect_false(anyNA(out$temperature_2m))
   })
@@ -68,8 +80,11 @@ describe("met_wide() §3.1 contract", {
   it("aborts on a multi-site collection (the wide table is per-site)", {
     expect_error(
       met_wide(make_test_sites(2),
-               window = list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                             to = as.POSIXct("2026-01-02", tz = "UTC"))),
+        window = list(
+          from = as.POSIXct("2026-01-01", tz = "UTC"),
+          to = as.POSIXct("2026-01-02", tz = "UTC")
+        )
+      ),
       class = "meteoTidy_error_multi_site_wide"
     )
   })
@@ -91,8 +106,9 @@ describe("kind = 'forecast' serves the latest issuance only", {
     )
     store_write_forecast(root, new_forecast(fc))
     out <- met_wide(site,
-                    window = list(from = valid - 3600, to = valid + 3600),
-                    kind = "forecast", variables = "temperature_2m")
+      window = list(from = valid - 3600, to = valid + 3600),
+      kind = "forecast", variables = "temperature_2m"
+    )
     # the pooled mean (20) would mix the stale issuance into the prediction
     expect_equal(as.numeric(out$temperature_2m), 30)
   })
@@ -101,21 +117,34 @@ describe("kind = 'forecast' serves the latest issuance only", {
 describe("kind routing", {
   it("routes kind='forecast' via corrected forecast and kind='record' via record", {
     site <- make_test_site()
-    called <- new.env(); called$fc <- 0L; called$rec <- 0L
+    called <- new.env()
+    called$fc <- 0L
+    called$rec <- 0L
     testthat::local_mocked_bindings(
-      met_forecast_archive = function(...) { called$fc <- called$fc + 1L
-                                             make_forecast(n = 2) },
-      met_record = function(...) { called$rec <- called$rec + 1L; make_obs(n = 2) }
+      met_forecast_archive = function(...) {
+        called$fc <- called$fc + 1L
+        make_forecast(n = 2)
+      },
+      met_record = function(...) {
+        called$rec <- called$rec + 1L
+        make_obs(n = 2)
+      }
     )
-    win <- list(from = as.POSIXct("2026-01-01", tz = "UTC"),
-                to = as.POSIXct("2026-01-02", tz = "UTC"))
-    met_wide(site, window = win, kind = "forecast",
-             now = as.POSIXct("2026-01-01", tz = "UTC"))
+    win <- list(
+      from = as.POSIXct("2026-01-01", tz = "UTC"),
+      to = as.POSIXct("2026-01-02", tz = "UTC")
+    )
+    met_wide(site,
+      window = win, kind = "forecast",
+      now = as.POSIXct("2026-01-01", tz = "UTC")
+    )
     expect_gt(called$fc, 0L)
     expect_equal(called$rec, 0L)
 
-    met_wide(site, window = win, kind = "record",
-             now = as.POSIXct("2026-01-01", tz = "UTC"))
+    met_wide(site,
+      window = win, kind = "record",
+      now = as.POSIXct("2026-01-01", tz = "UTC")
+    )
     expect_gt(called$rec, 0L)
   })
 })

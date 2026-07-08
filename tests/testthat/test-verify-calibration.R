@@ -3,7 +3,8 @@
 describe("rank / PIT histogram", {
   it("is ~flat for a calibrated ensemble and U-shaped when under-dispersed", {
     withr::local_seed(21)
-    n <- 2000; m <- 20
+    n <- 2000
+    m <- 20
     truth <- rnorm(n)
     # calibrated: members drawn from the same predictive dist as truth
     ens_cal <- matrix(rnorm(n * m), nrow = n)
@@ -16,14 +17,15 @@ describe("rank / PIT histogram", {
     # under-dispersed ≫ 1 with mass piled in the end bins (U-shape).
     expect_lt(histogram_flatness(rh_cal), histogram_flatness(rh_ud))
     ends <- c(rh_ud[1], rh_ud[length(rh_ud)])
-    expect_gt(mean(ends), mean(rh_ud[-c(1, length(rh_ud))]))   # U-shape
+    expect_gt(mean(ends), mean(rh_ud[-c(1, length(rh_ud))])) # U-shape
   })
 })
 
 describe("spread-error ratio", {
   it("is ≈ 1 for a well-calibrated ensemble", {
     withr::local_seed(22)
-    n <- 3000; m <- 30
+    n <- 3000
+    m <- 30
     truth <- rnorm(n)
     ens <- matrix(rnorm(n * m), nrow = n)
     ser <- spread_error_ratio(ens, truth)
@@ -34,7 +36,7 @@ describe("spread-error ratio", {
 describe("Brier score + reliability for rain occurrence", {
   it("computes the Brier score correctly for a PoP fixture", {
     prob <- c(0.0, 0.5, 1.0, 0.5)
-    outcome <- c(0, 1, 1, 0)                     # rained? 0/1
+    outcome <- c(0, 1, 1, 0) # rained: 0 or 1
     bs <- brier_score(prob, outcome)
     expect_equal(bs, mean((prob - outcome)^2))
   })
@@ -42,7 +44,7 @@ describe("Brier score + reliability for rain occurrence", {
   it("returns a reliability table binning forecast probability vs frequency", {
     withr::local_seed(23)
     prob <- runif(1000)
-    outcome <- rbinom(1000, 1, prob)             # perfectly reliable by construction
+    outcome <- rbinom(1000, 1, prob) # perfectly reliable by construction
     rel <- reliability_table(prob, outcome, bins = 5)
     expect_true(all(c("bin_mid", "observed_freq") %in% names(rel)))
     # observed frequency tracks the forecast probability (reliable)

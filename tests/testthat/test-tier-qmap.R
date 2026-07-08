@@ -5,7 +5,7 @@ describe("basic distributional correction", {
   it("corrects a known distributional shift within tolerance", {
     withr::local_seed(1)
     obs <- rnorm(1000, 15, 3)
-    fc <- rnorm(1000, 18, 5)                       # shifted + wider
+    fc <- rnorm(1000, 18, 5) # shifted and wider
     pairs <- tibble::tibble(forecast = fc, observation = obs,
                             season = rep(c("DJF", "MAM", "JJA", "SON"),
                                          length.out = 1000))

@@ -14,7 +14,7 @@ describe("silo_qcode_map()", {
     expect_true(interp$method %in% c("imputed", "model_fill"))
     expect_equal(interp$qc_flag, "ok")
 
-    grid <- silo_qcode_map("75")        # 75 = interpolated/grid (DataDrill)
+    grid <- silo_qcode_map("75") # 75 means interpolated/grid (DataDrill)
     expect_true(grid$method %in% c("imputed", "model_fill"))
   })
 

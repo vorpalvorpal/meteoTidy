@@ -18,7 +18,7 @@ describe("physics_constraints(mode = 'flag')", {
   })
 
   it("suspects wind gusts < wind speed", {
-    row <- qc_wide_row(wind_speed_10m = 8, wind_gusts_10m = 5)  # gust < mean
+    row <- qc_wide_row(wind_speed_10m = 8, wind_gusts_10m = 5) # gust below mean
     out <- physics_constraints(row, mode = "flag")
     expect_true(isTRUE(out$violated) ||
                   any(grepl("suspect", unlist(out))))
