@@ -1,5 +1,7 @@
 # meteoTidy
 
+> A project of [`tidyWaste`](https://github.com/vorpalvorpal/tidyWaste) — an ecosystem of R packages for waste management facilities.
+
 Ingest, clean, and calibrate site weather data. Part of the tidyWaste family.
 
 meteoTidy is the site-weather data layer for
