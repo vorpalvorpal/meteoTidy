@@ -4,13 +4,10 @@ Task: `C:\Users\KatoombaWMF\dev\meteoTidy_prompt.md` (problems 1–12 + Definiti
 Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NOT merge.
 
 ## Current state
-- All 12 problems committed (12 = c544104). Branch pushed to origin (gh auth OK). Suite 1174 pass / 0 fail / 3 skip.
-- Sync verbs return site_id/status/message/sources(list-col); fail_on arg; stderr log line;
-  per-site store lock (config$lock_timeout). Tests set options(meteoTidy.sync_log = FALSE) in setup.R.
-- met_wide(source=, model=): defaults only-source else openmeteo; only-model else best_match, hourly.
-  Gust>=wind enforced; shortwave_radiation in contract (direct+diffuse fallback).
-- SILO: DataDrill live OK; obs vars now temperature_2m_max/_min, precipitation, shortwave_radiation (daily mean W/m2), pressure_msl.
-- NEXT: inst/acceptance/live_sync.R (a-g), live run, docs/NEWS, check, PR.
+- DONE. PR https://github.com/vorpalvorpal/meteoTidy/pull/12 open (not merged). Issues #7-#11 opened for deferred items.
+- Live acceptance (inst/acceptance/live_sync.R): ALL 7 CHECKS PASS (2026-09-29). Suite 1191/0/3.
+- check(manual=FALSE): 0E/0W; notes: time-server (env). NEWS note fixed after (verified with R news parser).
+- Awaiting user: review/merge PR #12 (merge --no-ff, then delete branch).
 ## Pending (in order)
 - [x] 1  lead_time whole seconds
 - [x] 9  filelock + read-dedup
@@ -28,7 +25,7 @@ Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NO
         enforce gusts >= wind after aggregation, add shortwave_radiation to .met31_variables
         (or compute direct+diffuse). Provenance names the chosen source.
 - [x] 12 SILO classed errors (silo_rejected/bad_request/failed), DataDrill reshape, qcodes 42/35/75, tmax/tmin, radiation
-- [ ] inst/acceptance/live_sync.R (checks a–g); README + vignette production section; NEWS
+- [x] inst/acceptance/live_sync.R (checks a–g); README + vignette production section; NEWS
         (breaking: BOM forecast variables/model labels; openmeteo provides default; lead_time units);
         `devtools::check()` 0E/0W; live acceptance run; push; PR; issues for deferred items.
 
