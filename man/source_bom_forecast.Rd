@@ -14,12 +14,12 @@ source_bom_forecast(
 }
 \arguments{
 \item{ladder}{A list of transport rungs (see \code{ladder_fetch()}) for the
-daily product. Defaults to the précis feed, then (when \code{allow_web_api})
-the web API.}
+daily product. Defaults to the web API (when \code{allow_web_api}), then the
+précis feed.}
 
 \item{allow_web_api}{Logical, default \code{FALSE}. Enables the web API for the
-daily fallback, the hourly forecast, and geohash search in
-\code{\link[=resolve_station]{resolve_station()}}.}
+daily forecast (preferred over the précis), the hourly forecast, and
+geohash search in \code{\link[=resolve_station]{resolve_station()}}.}
 
 \item{store_root}{Single string, the store root used for breaker-state
 persistence.}
@@ -45,8 +45,10 @@ chances (\code{precipitation_sum} rows with \code{stat = "p75"}/\code{"p50"}/\co
 "X \% chance of at least A mm" is the \code{100 - X} percentile), and maximum
 UV index (\code{uv_index_max}); text elements (précis, extended forecast,
 fire danger, UV category) are returned by \code{\link[=fetch_forecast_aux]{fetch_forecast_aux()}} and
-archived to \code{forecast_aux}. Rows have \code{model = "daily"} and
-\code{valid_time} = the start of the local day.
+archived to \code{forecast_aux}. Rows have \code{model = "daily"} (the site's
+own web-API forecast) or \code{model = "daily_precis"} (the town précis
+fallback, whose \code{forecast_aux} \code{location} row names the area) and
+\code{valid_time} = the start of the local day (précis: of the period).
 \item the \strong{hourly} forecast (~3 days; web API only) -- temperature,
 apparent temperature, dew point, humidity, wind speed/direction/gusts,
 UV index, chance of rain (\code{precipitation_probability}) and rain amounts
@@ -56,13 +58,16 @@ at BOM's 10/25/50 \% chances (\code{precipitation} rows with \code{stat = "p90"}
 
 \code{issue_time} is BOM's own issue time for the product.
 
-The daily forecast comes from the official précis product feed when the
-site has a BOM area code (\verb{resolved: bom: aac:} in site YAML, e.g.
-\code{NSW_PT072} for Katoomba); otherwise, or if that feed fails, from the
-unofficial \code{api.weather.bom.gov.au} web API. The web API is keyed by the
-site's 6-character geohash (\verb{resolved: bom: geohash:}), is \strong{opt-in}
-(\code{allow_web_api = TRUE}) and at-your-own-risk (SCOPING section 5.1), and
-is the only channel for the hourly forecast.
+The daily forecast comes first from the unofficial
+\code{api.weather.bom.gov.au} web API for the site's own 6-character geohash
+(\verb{resolved: bom: geohash:}), when it is allowed. Only if that fails (or
+the web API is not allowed) does it come from the official précis product
+feed for the site's BOM area code (\verb{resolved: bom: aac:}, e.g.
+\code{NSW_PT072} for Katoomba) -- a town forecast, which for a site between
+towns is some other place's (Blaxland's nearest précis town is
+Springwood). The web API is \strong{opt-in} (\code{allow_web_api = TRUE}) and
+at-your-own-risk (SCOPING section 5.1), and is the only channel for the
+hourly forecast.
 }
 \examples{
 adapter <- source_bom_forecast(store_root = tempfile(), allow_web_api = TRUE)

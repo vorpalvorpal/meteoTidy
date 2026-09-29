@@ -242,7 +242,7 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A met_sites collection has duplicate site_id values.",
       "A site YAML sources entry has a literal secret value instead of a *_env/*_keyring reference.", # nolint: line_length_linter.
       "A site YAML file has an unrecognised top-level or site-level key.",
-      "store_compact() was asked to compact a table name it does not recognise.",
+      "met_compact() was asked to compact a table name it does not recognise.",
       "calib_read() found no calibration manifest row for the requested key/version.",
       "The no-network test guard tripped: METEOTIDY_NO_NET=1 blocked a live HTTP request.",
       "An HTTP request received a persistent failure status (404/410); never retried.",

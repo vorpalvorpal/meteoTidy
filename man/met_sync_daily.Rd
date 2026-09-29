@@ -4,7 +4,12 @@
 \alias{met_sync_daily}
 \title{Sync forecasts and extend curated history products (daily)}
 \usage{
-met_sync_daily(sites, now = .now(), config, fail_on = c("none", "any", "all"))
+met_sync_daily(
+  sites,
+  now = .now(),
+  config,
+  fail_on = c("none", "failed", "any", "all")
+)
 }
 \arguments{
 \item{sites}{A \code{met_site} or \code{met_sites} collection.}
@@ -19,10 +24,19 @@ another process's write lock on \code{store_root}.}
 
 \item{fail_on}{When to signal an error (class
 \code{meteoTidy_error_sync_failed}) after all the work is done, so a
-scheduler running \code{Rscript} sees a non-zero exit status: \code{"none"}
-(default; never), \code{"any"} (any site not fully \code{"ok"} -- any source
-failed), \code{"all"} (every site failed outright). The condition carries the
-status table as \code{cnd$status}.}
+scheduler running \code{Rscript} sees a non-zero exit status:
+\itemize{
+\item \code{"none"} (default): never.
+\item \code{"failed"} (\strong{recommended for production}): any source \code{"failed"}
+or any site \code{"error"}. A \code{"stale"} source (a station that has stopped
+reporting, e.g. an offline logger) is logged but does not fail the
+run, so one silent station does not fail every hourly run while a dead
+feed still does.
+\item \code{"any"}: any site not fully \code{"ok"}, including a stale source.
+\item \code{"all"}: only when every site failed outright.
+}
+
+The condition carries the status table as \code{cnd$status}.}
 }
 \value{
 A per-site status tibble; see \code{\link[=met_sync_live]{met_sync_live()}} (same columns,
@@ -51,6 +65,7 @@ met_sync_daily(site, config = my_pipeline_config)
 \seealso{
 Other pipeline: 
 \code{\link{met_backfill}()},
+\code{\link{met_compact}()},
 \code{\link{met_refit}()},
 \code{\link{met_sync_live}()}
 }

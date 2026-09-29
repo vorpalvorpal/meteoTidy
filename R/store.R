@@ -239,48 +239,114 @@ dataset_path <- function(store_root, table, parts, create = FALSE) {
   arrow::open_dataset(dir, format = "parquet", partitioning = arrow::hive_partition())
 }
 
-#' Compact partitioned Parquet tables in a store
+#' Compact a store's Parquet tables
 #'
-#' Rewrites every partition of every requested table that contains more than
-#' one part-file into a single file, atomically (temp file + rename). This
-#' does not change which rows are readable -- current, superseded, and
-#' `as_of` reads return identical content before and after compaction. Safe
-#' to call repeatedly (a no-op on an already-compacted store). Never runs
-#' implicitly; intended to be called on a schedule (Plan 16's
-#' `met_refit()`).
+#' Every sync appends small part-files: one per partition written to the
+#' observation and forecast tables, and one per site per run to the
+#' `qc_log` and `obs_transport` logs (which are otherwise never rewritten).
+#' Left alone, an hourly schedule accumulates tens of thousands of tiny
+#' files, which slows every read. `met_compact()` rewrites each partition
+#' holding more than one part-file as a single file, atomically (a verified
+#' temp file renamed into place; the old files are removed only afterwards).
 #'
-#' @param store_root Root directory of the store.
-#' @param tables Character vector of tables to compact; any of
-#'   `"observations"`, `"forecasts"`, `"forecast_aux"`.
-#' @return `store_root`, invisibly.
-#' @keywords internal
-#' @noRd
-store_compact <- function(store_root, tables = .store_tables()) {
-  with_store_lock(store_root, .store_compact_impl(store_root, tables))
-}
-
-.store_compact_impl <- function(store_root, tables) {
-  unknown <- setdiff(tables, .store_tables())
+#' What readers see does not change: current, superseded and `as_of`
+#' observation reads, forecast reads, and the deduplicated `qc_log` /
+#' `obs_transport` reads return the same rows before and after. Rows that no
+#' read can return are dropped: exact duplicate forecast keys (left by
+#' pre-lock concurrent writers), and in the two logs every entry superseded
+#' by a later write for the same key.
+#'
+#' The whole compaction holds the store's write lock, so it is safe to run
+#' while syncs are scheduled: it waits for a running sync (up to
+#' `lock_timeout` seconds) and a sync that starts meanwhile waits for it.
+#' Run it on a schedule, e.g. weekly, at a time no sync is due.
+#'
+#' @param store_root Root directory of the store (`config$store_root`).
+#' @param tables Tables to compact; any of `"observations"`, `"forecasts"`,
+#'   `"forecast_aux"`, `"qc_log"`, `"obs_transport"` (default: all).
+#' @param lock_timeout Seconds to wait for another process's store lock
+#'   before aborting with class `meteoTidy_error_store_locked`. Defaults to
+#'   `getOption("meteoTidy.lock_timeout", 600)`.
+#' @return A tibble with one row per table: `table`, `files_before`,
+#'   `files_after`, and `rows_before`/`rows_after` (rows in the partitions it
+#'   rewrote), invisibly.
+#' @family pipeline
+#' @export
+#' @examples
+#' \dontrun{
+#' # Weekly, e.g. Sunday 03:40, between two hourly syncs:
+#' met_compact("C:/meteo/store")
+#' }
+met_compact <- function(store_root, tables = .compact_tables(), lock_timeout = NULL) {
+  unknown <- setdiff(tables, .compact_tables())
   if (length(unknown) > 0) {
     abort_meteo(
       "Unknown table{?s} for compaction: {.val {unknown}}.",
       class = "unknown_store_table"
     )
   }
+  with_store_lock(store_root, .store_compact_impl(store_root, tables), timeout = lock_timeout)
+}
 
-  for (table in tables) {
+# Internal name kept for existing callers.
+store_compact <- function(store_root, tables = .store_tables()) {
+  met_compact(store_root, tables = tables)
+}
+
+# Every table met_compact() knows: the hive-partitioned tables plus the two
+# append-only logs.
+.compact_tables <- function() {
+  c(.store_tables(), "qc_log", "obs_transport")
+}
+
+# Rows a compacted partition keeps (see met_compact()): identical to what
+# the table's reader returns, minus rows no read can see.
+.compact_rows <- function(table, df) {
+  latest_per_key <- function(df, key_cols, stamp) {
+    key <- do.call(paste, c(lapply(df[key_cols], function(x) {
+      if (inherits(x, "POSIXct")) format(x, "%Y-%m-%dT%H:%M:%OS6", tz = "UTC") else as.character(x)
+    }), sep = "\r"))
+    ord <- order(key, df[[stamp]], decreasing = c(FALSE, TRUE), method = "radix")
+    df <- df[ord, , drop = FALSE]
+    df[!duplicated(key[ord]), , drop = FALSE]
+  }
+  switch(table,
+    qc_log = latest_per_key(df, c("site_id", "datetime_utc", "variable", "rule"), "logged_at"),
+    obs_transport = latest_per_key(df, c("site_id", "datetime_utc", "variable", "source"), "ingested_at"),
+    forecasts = df[!duplicated(df[intersect(c("site_id", "source", "model", "issue_time", "valid_time",
+                                               "member", "stat", "variable"), names(df))]), , drop = FALSE],
+    forecast_aux = df[!duplicated(df[intersect(c("site_id", "source", "issue_time", "valid_time", "field"),
+                                               names(df))]), , drop = FALSE],
+    df
+  )
+}
+
+.store_compact_impl <- function(store_root, tables) {
+  out <- lapply(tables, function(table) {
     dir <- .table_dir(store_root, table)
-    if (!dir.exists(dir)) next
-    part_files <- list.files(dir, pattern = "\\.parquet$", recursive = TRUE, full.names = TRUE)
-    if (length(part_files) == 0) next
-    partition_dirs <- unique(dirname(part_files))
-    for (pdir in partition_dirs) {
+    part_files <- if (dir.exists(dir)) {
+      list.files(dir, pattern = "\\.parquet$", recursive = TRUE, full.names = TRUE)
+    } else {
+      character(0)
+    }
+    rows_before <- 0L
+    rows_after <- 0L
+    for (pdir in unique(dirname(part_files))) {
       files <- list.files(pdir, pattern = "\\.parquet$", full.names = TRUE)
       if (length(files) <= 1) next
-      combined <- do.call(rbind, lapply(files, arrow::read_parquet))
-      .atomic_rewrite_partition(pdir, combined)
+      combined <- tibble::as_tibble(do.call(rbind, lapply(files, arrow::read_parquet)))
+      kept <- .compact_rows(table, combined)
+      rows_before <- rows_before + nrow(combined)
+      rows_after <- rows_after + nrow(kept)
+      .atomic_rewrite_partition(pdir, kept)
     }
-  }
-
-  invisible(store_root)
+    files_after <- if (dir.exists(dir)) {
+      length(list.files(dir, pattern = "\\.parquet$", recursive = TRUE))
+    } else {
+      0L
+    }
+    tibble::tibble(table = table, files_before = length(part_files), files_after = files_after,
+                   rows_before = rows_before, rows_after = rows_after)
+  })
+  invisible(vctrs::vec_rbind(!!!out))
 }

@@ -33,7 +33,7 @@ NULL
 #' manifest **only** when Plan 13's skill gate passes (`correct_refit()`
 #' itself performs the verdict-gated `calib_write()`); runs `verify_run()` over
 #' `config$forecast_sources` for the verification report; and compacts the
-#' store's Parquet partitions (`store_compact()`, Plan 03).
+#' store's Parquet partitions and logs ([met_compact()], Plan 03).
 #'
 #' Idempotent: a second call over the same inputs and clock re-verifies but
 #' only re-writes a calibration if the skill gate passes again; compaction
@@ -58,7 +58,7 @@ met_refit <- function(sites, now = .now(), config) {
     }
 
     verify_run(store_root, site, sources = config$forecast_sources, now = now)
-    store_compact(store_root)
+    met_compact(store_root)
 
     list(status = "ok", message = NA_character_)
   }, on_error = "isolate")
