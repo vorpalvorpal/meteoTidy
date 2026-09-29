@@ -338,3 +338,25 @@ describe("problem 11: met_sync_daily integration", {
     expect_equal(nrow(store_read_obs(root, "kat")), n1)
   })
 })
+
+describe("problem 11 (found in the live acceptance run): impossible readings", {
+  it("flags an out-of-range reading 'fail' instead of failing the whole fetch", {
+    # Live 2026-09-29: Blaxland's logger reported -64.8 degC before it went
+    # offline; new_obs() rejected it as an 'ok' row and the source failed.
+    withr::local_envvar(EAGLE_API_KEY = "test-key-not-real")
+    site <- make_prod_site("kat")
+    a <- source_eagleio(c(temperature_2m = kat_temp_node))
+    tmp <- withr::local_tempfile(fileext = ".json")
+    writeLines(paste0(
+      '{"header":{"columns":{"0":{"units":"\u00b0C"}}},"data":[',
+      '{"ts":"2026-09-23T00:10:00.000Z","f":{"0":{"v":14.1}}},',
+      '{"ts":"2026-09-23T00:20:00.000Z","f":{"0":{"v":-64.8}}}]}'
+    ), tmp)
+    obs <- with_routed_http(list("nodes/64642e52fbaed638fdb04100/historic" = function(url) tmp), {
+      fetch(a, site, "temperature_2m", eagle_window(), now = prod_now())
+    })
+    expect_equal(nrow(obs), 2)
+    expect_equal(obs$qc_flag[obs$value == -64.8], "fail")
+    expect_equal(obs$qc_flag[obs$value == 14.1], "ok")
+  })
+})

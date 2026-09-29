@@ -333,3 +333,15 @@ qc_rules_for_variable <- function(variable) {
 
   rules
 }
+
+# Ingest-time range flag for adapters: a value outside its variable's
+# dictionary [min, max] is stored flagged "fail" rather than rejected, so
+# one impossible reading (e.g. a logger's -64.8 degC) never costs the fetch.
+# qc_run()'s range rule would reach the same verdict later.
+.flag_out_of_range <- function(obs, dict = met_variables()) {
+  ranges <- dict[match(obs$variable, dict$variable), c("min", "max")]
+  bad <- (!is.na(ranges$min) & !is.na(obs$value) & obs$value < ranges$min) |
+    (!is.na(ranges$max) & !is.na(obs$value) & obs$value > ranges$max)
+  obs$qc_flag[bad] <- "fail"
+  obs
+}

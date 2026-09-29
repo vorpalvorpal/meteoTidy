@@ -143,7 +143,7 @@ S7::method(fetch, source_eagleio) <- function(adapter, site, variables, window, 
     if (length(parsed$value) == 0) {
       return(NULL)
     }
-    tibble::tibble(
+    .flag_out_of_range(tibble::tibble(
       site_id = site_id(site),
       datetime_utc = parsed$time,
       variable = v,
@@ -153,7 +153,7 @@ S7::method(fetch, source_eagleio) <- function(adapter, site, variables, window, 
       source = adapter@source_id,
       method = "measured",
       qc_flag = "ok"
-    )
+    ))
   })
   names(pieces) <- variables
   empty <- variables[vapply(pieces, is.null, logical(1))]
