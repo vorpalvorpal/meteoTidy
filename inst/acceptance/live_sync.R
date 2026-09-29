@@ -27,7 +27,7 @@
 #      merely stale; non-zero when a source fails
 #   j. (follow-up 3) BOM daily forecast from the site geohash web API (model
 #      "daily", location names the geohash), not the town précis
-#   k. (follow-up 4) re-fetching unchanged observations supersedes nothing
+#   k. (follow-up 4) re-fetching observations never overwrites a QC verdict or re-versions a key
 #   l. (follow-up 5) met_compact() cuts the file count, reads unchanged
 #   m. (follow-up 7) the second live run downloads no Open-Meteo run that is
 #      already archived ("already archived" in the status)
@@ -452,9 +452,15 @@ old <- obs_k[obs_k$superseded, ]
 m <- match(do.call(paste, old[obs_key]), do.call(paste, cur[obs_key]))
 same <- !is.na(m) & mapply(function(a, b) isTRUE(all.equal(a, b)), old$value, cur$value[m]) &
   old$method == cur$method[m]
-cat(sprintf("%d current rows, %d superseded, of which %d only differ in qc_flag (churn)\n",
-            nrow(cur), nrow(old), sum(same)))
-check("k", sum(same) == 0, sprintf("%d superseded rows with unchanged value and method", sum(same)))
+# QC's own verdict (raw "ok" -> "suspect", once) is a legitimate revision.
+# Churn is a re-fetch overwriting that verdict (a current raw "ok" over a
+# superseded QC flag with the same value) or a key re-versioned run after run.
+reverted <- same & old$qc_flag != "ok" & cur$qc_flag[m] == "ok"
+versions <- table(do.call(paste, obs_k[obs_key]))
+cat(sprintf("%d current rows, %d superseded (%d QC flag changes); reverted by a re-fetch: %d; keys with > 2 versions: %d\n",
+            nrow(cur), nrow(old), sum(same), sum(reverted), sum(versions > 2)))
+check("k", sum(reverted) == 0 && all(versions <= 2),
+      sprintf("no re-fetch overwrote a QC verdict (%d QC flag changes kept); no key re-versioned", sum(same)))
 
 # ---- l. compaction (follow-up 5) --------------------------------------------------------------
 
