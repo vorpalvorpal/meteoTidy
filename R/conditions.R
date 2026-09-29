@@ -205,7 +205,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_wide_source_unavailable",
       "meteoTidy_error_silo_rejected",
       "meteoTidy_error_silo_bad_request",
-      "meteoTidy_error_silo_failed"
+      "meteoTidy_error_silo_failed",
+      "meteoTidy_error_openmeteo_run_unknown"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -290,7 +291,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "met_wide() was asked for a source/model that is not archived for the window, or must be told which of several to serve.",
       "SILO (its firewall) returned an HTML \"Request Rejected\" page; transient (cnd$transient, cnd$support_id).",
       "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
-      "A SILO request failed for another reason (message has the API key redacted)."
+      "A SILO request failed for another reason (message has the API key redacted).",
+      "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled."
     ),
     stringsAsFactors = FALSE
   )

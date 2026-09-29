@@ -177,3 +177,23 @@ describe("problem 6: ensemble", {
     expect_equal(slept, c(7, 4))
   })
 })
+
+describe("problem 3 (found in the live acceptance run): unknown run time", {
+  it("fails the fetch instead of stamping a named model with the clock's 6 h floor", {
+    # Live 2026-09-29 07:21 UTC: one ensemble metadata request failed, the
+    # fallback stamped ECMWF's 18 UTC run as 06 UTC, and the next hour the
+    # same data was archived again under its true run time.
+    site <- make_prod_site("kat")
+    adapter <- source_openmeteo(product = "ensemble", provides = "temperature_2m")
+    routes <- openmeteo_routes()
+    routes[["ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- 503
+    err <- tryCatch(
+      with_routed_http(routes, {
+        fetch_forecast(adapter, site, "temperature_2m", issue_window_for(prod_now()), now = prod_now())
+      }),
+      error = identity
+    )
+    expect_s3_class(err, "meteoTidy_error_openmeteo_run_unknown")
+    expect_match(conditionMessage(err), "ecmwf_ifs025")
+  })
+})

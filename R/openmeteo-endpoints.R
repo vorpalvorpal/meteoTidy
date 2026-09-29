@@ -221,20 +221,33 @@
 #' @keywords internal
 #' @noRd
 .openmeteo_issue_time <- function(product, model, api_key, now) {
-  fallback <- .floor_run_cycle(now)
   if (is.null(model) || identical(model, "best_match") ||
         !(product %in% .openmeteo_horizon_products())) {
-    return(fallback)
+    # best_match blends several models, so it has no single run: the
+    # 6-hourly cycle floor is the documented convention.
+    return(.floor_run_cycle(now))
   }
+  # A named model must be stamped with its real run. Guessing (the clock's
+  # 6 h floor) mislabelled ECMWF's 18 UTC ensemble as 06 UTC in a live run;
+  # failing lets the next sync archive it correctly instead.
+  meta_error <- NULL
   meta <- tryCatch(
     .http_get(.openmeteo_meta_url(product, model, has_key = !is.null(api_key)),
               query = list(), now = now),
-    error = function(e) NULL
+    error = function(e) {
+      meta_error <<- .one_line(conditionMessage(e))
+      NULL
+    }
   )
   init <- if (is.list(meta)) suppressWarnings(as.numeric(meta$last_run_initialisation_time)) else NA
-  if (length(init) != 1 || is.na(init)) {
-    return(fallback)
+  init <- if (length(init) == 1 && !is.na(init)) as.POSIXct(init, origin = "1970-01-01", tz = "UTC") else NA
+  if (is.na(init) || init > now) {
+    why <- gsub("([{}])", "\1\1", meta_error %||% "no valid last_run_initialisation_time")
+    abort_meteo(
+      c("Could not determine the run time of Open-Meteo model {.val {model}} ({product}); not archiving it this time.",
+        x = why),
+      class = "openmeteo_run_unknown"
+    )
   }
-  init <- as.POSIXct(init, origin = "1970-01-01", tz = "UTC")
-  if (init > now) fallback else init
+  init
 }
