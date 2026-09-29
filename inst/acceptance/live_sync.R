@@ -333,7 +333,9 @@ check("e", e_isolated && e_logged && status != 0,
 # ---- f. concurrent processes ------------------------------------------------------
 
 section("f. two concurrent live syncs")
-root_f <- file.path(scratch, "store-concurrent")
+# Same length as the main "store" root plus one, so the long-path run stays
+# within the store-path budget (item 1 refuses a longer root outright).
+root_f <- file.path(scratch, "storec")
 dir.create(root_f, showWarnings = FALSE)
 sites_f <- write_sites(root_f, file.path(scratch, "sites-concurrent.yaml"))
 go <- file.path(scratch, "GO")
@@ -345,6 +347,8 @@ worker <- function(loader, sites_path, cfg, go) {
   t <- as.POSIXct(trunc(Sys.time(), "secs"))
   attr(t, "tzone") <- "UTC"
   res <- met_sync_live(read_sites_yaml(sites_path), now = t, config = cfg)
+  bad <- res$status == "error"
+  if (any(bad)) stop(paste(res$site_id[bad], res$message[bad], sep = ": ", collapse = "; "))
   do.call(rbind, lapply(seq_len(nrow(res)), function(i) cbind(site_id = res$site_id[i], res$sources[[i]])))
 }
 procs <- lapply(1:2, function(i) callr::r_bg(worker, list(load_meteotidy, sites_f, cfg_f, go),
