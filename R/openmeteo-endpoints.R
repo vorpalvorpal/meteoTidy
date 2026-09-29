@@ -211,11 +211,15 @@
 
 `%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
 
-.openmeteo_meta_url <- function(product, model, has_key) {
+# The metadata URL for a model's latest run. With a commercial key it goes to
+# the customer- host and carries the key, like every data request (item 8).
+.openmeteo_meta_url <- function(product, model, api_key = NULL) {
   spec <- .openmeteo_endpoint_path(product)
+  has_key <- !is.null(api_key)
   subdomain <- if (has_key) paste0("customer-", spec$subdomain) else spec$subdomain
-  sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
-          subdomain, .openmeteo_meta_name(product, model))
+  url <- sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
+                 subdomain, .openmeteo_meta_name(product, model))
+  if (has_key) paste0(url, "?", .openmeteo_build_query_string(list(apikey = api_key))) else url
 }
 
 # Floor a time to the start of its 6-hourly NWP run cycle (00/06/12/18 UTC).
@@ -258,7 +262,7 @@
   # failing lets the next sync archive it correctly instead.
   meta_error <- NULL
   meta <- tryCatch(
-    .http_get(.openmeteo_meta_url(product, model, has_key = !is.null(api_key)),
+    .http_get(.openmeteo_meta_url(product, model, api_key = api_key),
               query = list(), now = now),
     error = function(e) {
       meta_error <<- .one_line(conditionMessage(e))

@@ -67,8 +67,11 @@ calls/day, with no API key required. \strong{No product in this adapter aborts
 for lack of a key} -- the free tier technically serves every product
 wrapped here, including Historical Weather and Ensemble. When
 \code{api_key_env} is unset, \code{fetch()}/\code{fetch_forecast()} target the free host
-and emit a one-time \code{\link[=inform_meteo]{inform_meteo()}} reminder that the free tier is
-non-commercial only.
+and emit an \code{\link[=inform_meteo]{inform_meteo()}} reminder (class
+\code{meteoTidy_message_openmeteo_free_tier}) that the free tier is
+non-commercial only -- once per R session by default. Set
+\code{options(meteoTidy.openmeteo_free_tier_notice = "always")} to see it on
+every call, or \code{"never"} to silence it.
 
 Commercial deployments need a \strong{paid} Open-Meteo plan, and within those
 paid plans, the Historical/Climate/Ensemble/Satellite-Radiation APIs
@@ -76,7 +79,10 @@ additionally require the \strong{Professional tier or above}. That is a
 commercial-plan boundary, not a technical key gate this adapter enforces:
 set \code{api_key_env} to the name of an environment variable holding a
 commercial key and the adapter targets the \verb{customer-} API host and sends
-the key; which paid plan is required for a given product/volume is the
+the key on every request, including the model-metadata lookups that give
+each run's time (an empty variable counts as unset, i.e. the free tier).
+Error messages show request URLs with the key replaced by \verb{<redacted>}.
+Which paid plan is required for a given product/volume is the
 caller's responsibility to arrange with Open-Meteo.
 
 The key is read from the named environment variable \strong{at fetch time only}

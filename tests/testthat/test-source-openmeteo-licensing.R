@@ -23,6 +23,7 @@ describe("keyless requests (free host, non-commercial)", {
   it("emits the non-commercial notice exactly once (snapshot)", {
     # The free tier is licensed for non-commercial use only; the adapter warns
     # once via inform_meteo(). Snapshot the message text.
+    .openmeteo_reset_free_tier_notice() # shown once per session (item 8)
     expect_snapshot({
       adapter <- source_openmeteo(product = "forecast", models = "best_match")
       with_mocked_http(read_om_fixture("forecast.json"), {

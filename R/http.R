@@ -112,6 +112,7 @@
     )
   }
 
+  shown_url <- .redact_url(url) # nolint: object_usage_linter. used via cli glue
   req <- httr2::request(url)
   if (length(headers) > 0) {
     req <- do.call(httr2::req_headers, c(list(req), headers))
@@ -134,7 +135,7 @@
       reason <- conditionMessage(resp$parent %||% resp) # nolint: object_usage_linter. used via cli glue
       abort_meteo(
         c(
-          "Request to {.url {url}} got no response.",
+          "Request to {.url {shown_url}} got no response.",
           "x" = "{reason}",
           "i" = "Tried {attempt} time{?s} (timeout {timeout} s each)."
         ),
@@ -155,7 +156,7 @@
     if (status %in% .http_gone_codes) {
       abort_meteo(
         c(
-          "Request to {.url {url}} failed permanently (HTTP {status}).",
+          "Request to {.url {shown_url}} failed permanently (HTTP {status}).",
           "i" = "Not retried: this status is treated as persistent."
         ),
         class = "http_gone"
@@ -169,7 +170,7 @@
 
     abort_meteo(
       c(
-        "Request to {.url {url}} failed (HTTP {status}).",
+        "Request to {.url {shown_url}} failed (HTTP {status}).",
         "i" = if (.is_transient_status(status)) {
           "Retried {attempt} time{?s} without success."
         } else {
@@ -179,6 +180,14 @@
       class = "http_client_error"
     )
   }
+}
+
+# A URL as it may appear in an error message or a sync log: credentials in
+# the query string (Open-Meteo's commercial `apikey`, and the like) are
+# replaced, so a failed request never writes a key to the log.
+.redact_url <- function(url) {
+  gsub("([?&](apikey|api_key|key|token|password|username)=)[^&#]*", "\\1<redacted>",
+       url, ignore.case = TRUE)
 }
 
 # Extract the parsed body from a successful response. JSON is the only body

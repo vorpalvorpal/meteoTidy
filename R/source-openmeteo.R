@@ -16,8 +16,11 @@
 #' for lack of a key** -- the free tier technically serves every product
 #' wrapped here, including Historical Weather and Ensemble. When
 #' `api_key_env` is unset, `fetch()`/`fetch_forecast()` target the free host
-#' and emit a one-time [inform_meteo()] reminder that the free tier is
-#' non-commercial only.
+#' and emit an [inform_meteo()] reminder (class
+#' `meteoTidy_message_openmeteo_free_tier`) that the free tier is
+#' non-commercial only -- once per R session by default. Set
+#' `options(meteoTidy.openmeteo_free_tier_notice = "always")` to see it on
+#' every call, or `"never"` to silence it.
 #'
 #' Commercial deployments need a **paid** Open-Meteo plan, and within those
 #' paid plans, the Historical/Climate/Ensemble/Satellite-Radiation APIs
@@ -25,7 +28,10 @@
 #' commercial-plan boundary, not a technical key gate this adapter enforces:
 #' set `api_key_env` to the name of an environment variable holding a
 #' commercial key and the adapter targets the `customer-` API host and sends
-#' the key; which paid plan is required for a given product/volume is the
+#' the key on every request, including the model-metadata lookups that give
+#' each run's time (an empty variable counts as unset, i.e. the free tier).
+#' Error messages show request URLs with the key replaced by `<redacted>`.
+#' Which paid plan is required for a given product/volume is the
 #' caller's responsibility to arrange with Open-Meteo.
 #'
 #' The key is read from the named environment variable **at fetch time only**
@@ -126,11 +132,25 @@ source_openmeteo <- S7::new_class(
   if (length(adapter@models) == 1 && is.na(adapter@models)) NULL else adapter@models
 }
 
-# The one-time non-commercial notice: emitted whenever a request goes out on
-# the free host (no key configured). Per-call (see roxygen note above and the
-# implementer brief): the frozen snapshot test calls fetch() once, so a
-# per-call inform satisfies it; this is not a per-session dedup.
+# The non-commercial notice for requests on the free host (no key
+# configured). Follow-up review, item 8: shown on every call it filled an
+# hourly log, so it is shown once per R session by default. Option
+# meteoTidy.openmeteo_free_tier_notice: "once" (default), "always", "never".
+.openmeteo_session <- new.env(parent = emptyenv())
+
+.openmeteo_reset_free_tier_notice <- function() {
+  .openmeteo_session$free_tier_noticed <- FALSE
+  invisible(NULL)
+}
+
 .openmeteo_maybe_notice_free_tier <- function(has_key) {
+  mode <- getOption("meteoTidy.openmeteo_free_tier_notice", "once")
+  mode <- if (is.character(mode) && length(mode) == 1 && mode %in% c("once", "always", "never")) mode else "once"
+  if (has_key || identical(mode, "never") ||
+        (identical(mode, "once") && isTRUE(.openmeteo_session$free_tier_noticed))) {
+    return(invisible(NULL))
+  }
+  .openmeteo_session$free_tier_noticed <- TRUE
   if (!has_key) {
     inform_meteo(
       c(
