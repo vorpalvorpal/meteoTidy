@@ -32,6 +32,9 @@ NULL
 #'   API key (read at fetch time; never stored or printed).
 #' @param source_id Single string stamped into the `source` column.
 #' @param base_url The eagle.io API root.
+#' @param stale_after_hours Hours without a new reading after which the
+#'   station is reported stale (a `meteoTidy_warning_source_stale` warning;
+#'   the rows are still returned). Default 6.
 #' @return A `source_eagleio` (`met_adapter` subclass) S7 object.
 #' @family adapter
 #' @export
@@ -44,10 +47,12 @@ source_eagleio <- S7::new_class(
   properties = list(
     nodes = S7::class_character,
     api_key_env = S7::class_character,
-    base_url = S7::class_character
+    base_url = S7::class_character,
+    stale_after_hours = S7::class_double
   ),
   constructor = function(nodes, api_key_env = "EAGLE_API_KEY", source_id = "eagleio",
-                         base_url = "https://api.eagle.io/api/v1") {
+                         base_url = "https://api.eagle.io/api/v1",
+                         stale_after_hours = 6) {
     nodes <- unlist(nodes)
     if (is.null(names(nodes)) || any(!nzchar(names(nodes)))) {
       abort_meteo("{.arg nodes} must be named by dictionary variable.", class = "bad_mapping")
@@ -61,7 +66,8 @@ source_eagleio <- S7::new_class(
       met_adapter(source_id = source_id, provides = names(nodes), cadence = "subdaily"),
       nodes = vapply(nodes, as.character, character(1)),
       api_key_env = api_key_env,
-      base_url = sub("/+$", "", base_url)
+      base_url = sub("/+$", "", base_url),
+      stale_after_hours = as.double(stale_after_hours)
     )
   }
 )
@@ -180,6 +186,7 @@ S7::method(fetch, source_eagleio) <- function(adapter, site, variables, window, 
   if (is.null(out)) {
     out <- .bom_empty_obs()
   }
+  .eagleio_warn_if_stale(adapter, out, now)
   check_fetch_result(out, adapter, variables)
 }
 
@@ -194,4 +201,23 @@ S7::method(format, source_eagleio) <- function(x, ...) {
 S7::method(print, source_eagleio) <- function(x, ...) {
   cat(format(x), sep = "\n")
   invisible(x)
+}
+
+# A station can stop reporting while a long (e.g. 7-day daily) window still
+# holds its last readings: the fetch succeeds but the station is dead.
+# Warn source_stale so the sync records the source as "stale" (rows kept).
+.eagleio_warn_if_stale <- function(adapter, out, now) {
+  if (nrow(out) == 0) {
+    return(invisible())
+  }
+  last <- max(out$datetime_utc)
+  age <- as.numeric(difftime(now, last, units = "hours"))
+  if (age > adapter@stale_after_hours) {
+    warn_meteo(
+      c("eagle.io station is stale: {.val {adapter@source_id}}'s newest reading is {round(age)} h old.",
+        "i" = "Last value reported {format(last, '%Y-%m-%d %H:%M UTC')}."),
+      class = "source_stale"
+    )
+  }
+  invisible()
 }

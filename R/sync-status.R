@@ -29,12 +29,14 @@ NULL
 # reported in the status table and the log line instead).
 .run_source <- function(kind, source, expr) {
   warnings <- character(0)
+  stale <- FALSE
   result <- withCallingHandlers(
     tryCatch(
       list(n = force(expr)),
       error = function(cnd) list(error = cnd)
     ),
     warning = function(w) {
+      stale <<- stale || inherits(w, "meteoTidy_warning_source_stale")
       warnings <<- c(warnings, conditionMessage(w))
       invokeRestart("muffleWarning")
     }
@@ -44,7 +46,7 @@ NULL
     return(.source_status_row(kind, source, status, 0L,
                               .one_line(conditionMessage(result$error))))
   }
-  .source_status_row(kind, source, "ok", result$n %||% 0L,
+  .source_status_row(kind, source, if (stale) "stale" else "ok", result$n %||% 0L,
                      if (length(warnings)) .one_line(warnings) else NA_character_)
 }
 

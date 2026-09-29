@@ -360,3 +360,37 @@ describe("problem 11 (found in the live acceptance run): impossible readings", {
     expect_equal(obs$qc_flag[obs$value == 14.1], "ok")
   })
 })
+
+describe("problem 11 (found in the live acceptance run): a stalled station with old data", {
+  # Live 2026-09-29: the daily 7-day window still reached Blaxland's last
+  # readings (24 Sep), so the source reported "ok" although the station had
+  # been silent for five days.
+  it("warns source_stale when the newest reading is older than stale_after", {
+    withr::local_envvar(EAGLE_API_KEY = "test-key-not-real")
+    site <- make_prod_site("kat")
+    a <- source_eagleio(kat_nodes())
+    later <- prod_now() + as.difftime(2, units = "days")
+    win <- list(from = later - as.difftime(7, units = "days"), to = later)
+    expect_warning(
+      obs <- with_routed_http(kat_routes(), fetch(a, site, a@provides, win, now = later)),
+      class = "meteoTidy_warning_source_stale"
+    )
+    expect_gt(nrow(obs), 0)
+  })
+
+  it("stays quiet for a station reporting within stale_after", {
+    withr::local_envvar(EAGLE_API_KEY = "test-key-not-real")
+    site <- make_prod_site("kat")
+    a <- source_eagleio(kat_nodes())
+    expect_no_warning(with_routed_http(kat_routes(), fetch(a, site, a@provides, eagle_window(), now = prod_now())))
+  })
+
+  it("is recorded as a 'stale' source that still wrote its rows", {
+    row <- .run_source("obs", "eagleio", {
+      warn_meteo("old data", class = "source_stale")
+      42L
+    })
+    expect_equal(row$status, "stale")
+    expect_equal(row$n, 42L)
+  })
+})

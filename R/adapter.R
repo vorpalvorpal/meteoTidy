@@ -309,7 +309,8 @@ check_fetch_result <- function(x, adapter, variables) {
       nodes = config$nodes,
       api_key_env = config$api_key_env %||% "EAGLE_API_KEY",
       source_id = source_name,
-      base_url = config$base_url %||% "https://api.eagle.io/api/v1"
+      base_url = config$base_url %||% "https://api.eagle.io/api/v1",
+      stale_after_hours = config$stale_after_hours %||% 6
     ))
   }
 

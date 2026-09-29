@@ -8,7 +8,8 @@ source_eagleio(
   nodes,
   api_key_env = "EAGLE_API_KEY",
   source_id = "eagleio",
-  base_url = "https://api.eagle.io/api/v1"
+  base_url = "https://api.eagle.io/api/v1",
+  stale_after_hours = 6
 )
 }
 \arguments{
@@ -22,6 +23,10 @@ API key (read at fetch time; never stored or printed).}
 \item{source_id}{Single string stamped into the \code{source} column.}
 
 \item{base_url}{The eagle.io API root.}
+
+\item{stale_after_hours}{Hours without a new reading after which the
+station is reported stale (a \code{meteoTidy_warning_source_stale} warning;
+the rows are still returned). Default 6.}
 }
 \value{
 A \code{source_eagleio} (\code{met_adapter} subclass) S7 object.

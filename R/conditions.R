@@ -206,7 +206,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_silo_rejected",
       "meteoTidy_error_silo_bad_request",
       "meteoTidy_error_silo_failed",
-      "meteoTidy_error_openmeteo_run_unknown"
+      "meteoTidy_error_openmeteo_run_unknown",
+      "meteoTidy_warning_source_stale"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -292,7 +293,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "SILO (its firewall) returned an HTML \"Request Rejected\" page; transient (cnd$transient, cnd$support_id).",
       "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
       "A SILO request failed for another reason (message has the API key redacted).",
-      "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled."
+      "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled.",
+      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale)."
     ),
     stringsAsFactors = FALSE
   )
