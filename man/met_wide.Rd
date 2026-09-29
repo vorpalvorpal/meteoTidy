@@ -60,7 +60,12 @@ first listed model that has any value for it in the window (no single
 Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
 height or soil moisture). By default it is the source's only model, or
 else \code{"best_match"}, \code{"ecmwf_ifs025"}, \code{"gfs_global"}, \code{"icon_global"},
-\code{"icon_seamless"}, \code{"hourly"} in that order. \code{\link[=met_provenance]{met_provenance()}} records
+\code{"icon_seamless"}, \code{"hourly"} in that order. A model whose latest
+archived run is more than a day (option \code{meteoTidy.wide_stale_hours},
+default 24) behind the newest run of the other listed models -- one no
+longer fetched, such as \code{best_match} after the move to named models --
+drops behind every current model, so it only serves variables no current
+model has; named alone it is served as is. \code{\link[=met_provenance]{met_provenance()}} records
 the \code{model} and \code{stat} behind each column. Of each model, only the
 \strong{latest archived issuance} is served: the archive holds every past
 issuance overlapping the window (SCOPING section 9's archive-on-every-sync

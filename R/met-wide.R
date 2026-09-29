@@ -230,7 +230,12 @@ NULL
 #' Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
 #' height or soil moisture). By default it is the source's only model, or
 #' else `"best_match"`, `"ecmwf_ifs025"`, `"gfs_global"`, `"icon_global"`,
-#' `"icon_seamless"`, `"hourly"` in that order. [met_provenance()] records
+#' `"icon_seamless"`, `"hourly"` in that order. A model whose latest
+#' archived run is more than a day (option `meteoTidy.wide_stale_hours`,
+#' default 24) behind the newest run of the other listed models -- one no
+#' longer fetched, such as `best_match` after the move to named models --
+#' drops behind every current model, so it only serves variables no current
+#' model has; named alone it is served as is. [met_provenance()] records
 #' the `model` and `stat` behind each column. Of each model, only the
 #' **latest archived issuance** is served: the archive holds every past
 #' issuance overlapping the window (SCOPING section 9's archive-on-every-sync
@@ -398,8 +403,27 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
     hit
   }
   fc <- fc[fc$model %in% precedence, , drop = FALSE]
-  attr(fc, "precedence") <- precedence
+  attr(fc, "precedence") <- .demote_stale_models(fc, precedence)
   fc
+}
+
+# A model whose latest archived run is more than `stale_hours` behind the
+# newest run of any model in the precedence has stopped being fetched (e.g.
+# best_match after the move to named models, a retired model, a failing
+# feed): it moves behind every current model, so it only serves a variable
+# no current model has. Models run every 6-12 h and publish at different
+# delays, so a gap under a day is normal and does not reorder anything.
+.demote_stale_models <- function(fc, precedence,
+                                 stale_hours = getOption("meteoTidy.wide_stale_hours", 24)) {
+  if (length(precedence) < 2 || nrow(fc) == 0) {
+    return(precedence)
+  }
+  latest <- vapply(precedence, function(m) {
+    it <- fc$issue_time[fc$model == m]
+    if (length(it)) as.numeric(max(it)) else NA_real_
+  }, numeric(1))
+  stale <- !is.na(latest) & latest < max(latest, na.rm = TRUE) - stale_hours * 3600
+  c(precedence[!stale], precedence[stale])
 }
 
 # met_wide()'s default model precedence when a source has several: an
