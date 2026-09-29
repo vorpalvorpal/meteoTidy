@@ -42,34 +42,37 @@
 #' @examples
 #' silo_qcode_reference()
 silo_qcode_reference <- function() {
+  # Codes and meanings as documented by SILO ("Interpolation issues and data
+  # codes", https://www.longpaddock.qld.gov.au/silo/about/about-data, checked
+  # 2026-09-29): 0, 15, 25, 26, 35, 42, 75. Codes 1, 2, 10, 11, 21 and 76 are
+  # kept from earlier versions of this table (not in the current SILO list).
   tibble::tibble(
-    code = c("0", "1", "2", "10", "11", "15", "21", "25", "26", "35", "75", "76"),
+    code = c("0", "1", "2", "10", "11", "15", "21", "25", "26", "35", "42", "75", "76"),
     method = c(
       "measured", "measured", "measured",
       "imputed", "imputed", "imputed", "imputed",
-      "imputed", "imputed",
-      "model_fill",
+      "imputed", "derived", "imputed", "derived",
       "model_fill", "model_fill"
     ),
     qc_flag = c(
       "ok", "ok", "ok",
       "ok", "ok", "ok", "ok",
-      "ok", "ok",
-      "suspect",
-      "ok", "ok"
+      "ok", "ok", "ok", "ok",
+      "suspect", "ok"
     ),
     description = c(
-      "Observed station value.",
+      "Official observation as supplied by the Bureau of Meteorology.",
       "Observed station value (quality-checked).",
       "Observed station value, minor Y2K-era correction applied.",
       "Interpolated from nearby stations (deficit-based spatial method).",
       "Interpolated from nearby stations (alternate radius/weighting).",
+      "Deaccumulated rainfall (original observation spanned more than 24 hours).",
       "Interpolated from nearby stations (alternate radius/weighting).",
-      "Interpolated from nearby stations (alternate radius/weighting).",
-      "PatchedPoint: interpolated from nearby stations.",
-      "PatchedPoint: interpolated using the anomaly method.",
-      "Long-term average used as a fallback (no observation or usable spatial interpolation available).", # nolint: line_length_linter.
-      "DataDrill grid-cell value, interpolated from the station network.",
+      "Interpolated from daily observations for that date.",
+      "Synthetic Class A pan evaporation, calculated from temperature, radiation and vapour pressure.", # nolint: line_length_linter.
+      "Interpolated from daily observations using an anomaly interpolation method.",
+      "Satellite radiation estimate from the Bureau of Meteorology.",
+      "Interpolated from the long-term averages of daily observations for that day of year (fallback).", # nolint: line_length_linter.
       "DataDrill grid-cell value, anomaly-interpolation variant."
     )
   )

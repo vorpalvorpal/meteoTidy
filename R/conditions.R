@@ -202,7 +202,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_source_stale",
       "meteoTidy_warning_eagleio_node_empty",
       "meteoTidy_error_sync_failed",
-      "meteoTidy_error_wide_source_unavailable"
+      "meteoTidy_error_wide_source_unavailable",
+      "meteoTidy_error_silo_rejected",
+      "meteoTidy_error_silo_bad_request",
+      "meteoTidy_error_silo_failed"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -284,7 +287,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A source returned no data for the window: the station has stopped reporting.",
       "Some eagle.io nodes returned no records; the others were kept.",
       "met_sync_live()/met_sync_daily() finished with failures and fail_on asked for an error (cnd$status holds the status table).",
-      "met_wide() was asked for a source/model that is not archived for the window, or must be told which of several to serve."
+      "met_wide() was asked for a source/model that is not archived for the window, or must be told which of several to serve.",
+      "SILO (its firewall) returned an HTML \"Request Rejected\" page; transient (cnd$transient, cnd$support_id).",
+      "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
+      "A SILO request failed for another reason (message has the API key redacted)."
     ),
     stringsAsFactors = FALSE
   )
