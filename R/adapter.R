@@ -223,8 +223,17 @@ check_fetch_result <- function(x, adapter, variables) {
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
-# e.g. list(adapter = "rest", endpoint = ..., mapping = ...).
+# e.g. list(adapter = "rest", endpoint = ..., mapping = ...). A `provides`
+# entry narrows any adapter kind's variables (see .narrow_provides()).
 .adapter_from_source_config <- function(source_name, config) {
+  adapter <- .adapter_from_source_config_impl(source_name, config)
+  if (!is.null(config$provides) && !(config$adapter %in% c("rest", "file", "openmeteo"))) {
+    adapter@provides <- .narrow_provides(adapter@provides, config$provides, source_name)
+  }
+  adapter
+}
+
+.adapter_from_source_config_impl <- function(source_name, config) {
   kind <- config$adapter
   if (is.null(kind)) {
     abort_meteo(
@@ -258,9 +267,11 @@ check_fetch_result <- function(x, adapter, variables) {
   if (kind == "openmeteo") {
     return(source_openmeteo(
       product = config$product %||% "forecast",
-      models = config$models,
+      models = if (is.null(config$models)) NULL else as.character(unlist(config$models)),
       api_key_env = config$api_key_env,
-      source_id = source_name
+      source_id = source_name,
+      provides = config$provides,
+      forecast_days = config$forecast_days
     ))
   }
 
@@ -342,4 +353,27 @@ adapters_for_site <- function(site) {
   })
   names(adapters) <- names(sources)
   adapters
+}
+
+# Narrow an adapter's default `provides` to a configured subset (problem 6 of
+# the production review: site YAML could not narrow what a built-in adapter
+# requests, so e.g. the Open-Meteo ensemble always asked for every dictionary
+# variable and got HTTP 400/429). NULL keeps the defaults; naming a variable
+# the adapter cannot serve is a configuration error, not a silent no-op.
+.narrow_provides <- function(defaults, provides, source_id) {
+  if (is.null(provides)) {
+    return(defaults)
+  }
+  provides <- as.character(unlist(provides, use.names = FALSE))
+  unknown <- setdiff(provides, defaults)
+  if (length(unknown) > 0) {
+    abort_meteo(
+      c(
+        "Source {.val {source_id}} cannot provide {.val {unknown}}.",
+        "i" = "It can provide: {.val {defaults}}."
+      ),
+      class = "bad_provides"
+    )
+  }
+  provides
 }

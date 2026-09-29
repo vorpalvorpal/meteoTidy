@@ -75,7 +75,7 @@ new_forecast <- function(df) {
   # lead_time is normalised to WHOLE SECONDS here, on both the write and the
   # read path: Parquet stores a difftime as duration[s], which truncates any
   # sub-second fraction, so a fractional lead written from a wall-clock
-  # issue_time (Sys.time() has microseconds) would never read back equal.
+  # issue_time (the system clock has microseconds) would never read back equal.
   # The identity check therefore tolerates < 1 s of drift -- the resolution
   # the store can actually represent.
   df$lead_time <- as.difftime(round(as.numeric(df$lead_time, units = "secs")),
@@ -166,4 +166,16 @@ new_forecast_aux <- function(df) {
   }
 
   df[c("site_id", "source", "issue_time", "valid_time", "field", "value_text")]
+}
+
+# A zero-row canonical forecast tibble.
+.empty_forecast <- function() {
+  tibble::tibble(
+    site_id = character(0), source = character(0), model = character(0),
+    issue_time = as.POSIXct(character(0), tz = "UTC"),
+    valid_time = as.POSIXct(character(0), tz = "UTC"),
+    lead_time = as.difftime(numeric(0), units = "hours"),
+    member = integer(0), stat = character(0),
+    variable = character(0), value = double(0)
+  )
 }

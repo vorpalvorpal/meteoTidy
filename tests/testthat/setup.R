@@ -15,3 +15,10 @@ withr::local_envvar(
   TZ = "UTC",
   .local_envir = testthat::teardown_env()
 )
+
+# Transient-failure retries back off for seconds in production; keep the test
+# suite fast (the 429 regression test mocks .http_sleep() to assert waits).
+withr::local_options(
+  meteoTidy.http_backoff_base = 0.01, meteoTidy.http_backoff_max = 0.05,
+  .local_envir = testthat::teardown_env()
+)
