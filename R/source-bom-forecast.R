@@ -8,20 +8,26 @@
 # Tmax -- mislabelled as hourly `temperature_2m` -- and ignored
 # `allow_web_api`. Now:
 #
-# * DAILY forecast, two transports in ladder order:
-#     1. `ftp_feeds` -- the official précis product for the site's state
+# * DAILY forecast, two transports in ladder order (follow-up review, item 3:
+#   the site's own forecast first, the town précis only as a fallback):
+#     1. `web_api` -- api.weather.bom.gov.au daily forecast for the site's
+#        6-character geohash (`model = "daily"`). Opt-in
+#        (`allow_web_api = TRUE`). It has the 75 %-chance rain amount, fire
+#        danger and extended text, and keeps today's maximum all day.
+#     2. `ftp_feeds` -- the official précis product for the site's state
 #        (e.g. IDN11060 for NSW) from BOM's anonymous product mirror,
-#        matched to the site's BOM area code (`resolved: bom: aac:`). Skipped
-#        (no breaker strike) when no area code is configured.
-#     2. `web_api` -- api.weather.bom.gov.au daily forecast for the site's
-#        6-character geohash. Opt-in (`allow_web_api = TRUE`).
+#        matched to the site's BOM area code (`resolved: bom: aac:`)
+#        (`model = "daily_precis"`). This is a TOWN forecast -- for Blaxland,
+#        Springwood's -- so its forecast_aux carries a `location` row naming
+#        the area. Skipped (no breaker strike) when no area code is
+#        configured.
 # * HOURLY forecast (~3 days): only the web API serves it, so it is fetched
 #   only when `allow_web_api = TRUE`.
 #
 # Variables map onto the dictionary (daily aggregates use the `_max`/`_min`/
 # `_sum` names; "X % chance of at least A mm" is a quantile row, stat
 # "p<100-X>"). Text (précis, extended forecast, fire danger, UV category) goes
-# to forecast_aux. Rows carry `model = "daily"` or `model = "hourly"` so the
+# to forecast_aux. Rows carry `model = "daily"` (`"daily_precis"`) or `model = "hourly"` so the
 # two products are distinct issuances in the archive (the edited product has
 # no NWP model); `issue_time` is BOM's own product issue time.
 
@@ -101,11 +107,19 @@
     kind = "http",
     applies_to = c("precis_daily"),
     fetch_fn = function(request, now = NULL) {
+      if (is.null(request$geohash) || is.na(request$geohash)) {
+        abort_meteo(
+          c("No BOM geohash is configured for this site.",
+            "i" = "Set {.code resolved: bom: geohash:} (6 characters) to use the web API."),
+          class = "bom_rung_unconfigured"
+        )
+      }
       body <- .http_get(sprintf("%s/%s/forecasts/daily", .bom_webapi_base(), request$geohash),
                         headers = .bom_webapi_headers())
       list(
         forecast = bom_parse_webapi_daily(body, request$site_id, request$source),
-        aux = bom_parse_webapi_daily_aux(body, request$site_id, request$source)
+        aux = bom_parse_webapi_daily_aux(body, request$site_id, request$source,
+                                         geohash = request$geohash)
       )
     }
   )
@@ -158,8 +172,10 @@
 #'   "X % chance of at least A mm" is the `100 - X` percentile), and maximum
 #'   UV index (`uv_index_max`); text elements (précis, extended forecast,
 #'   fire danger, UV category) are returned by [fetch_forecast_aux()] and
-#'   archived to `forecast_aux`. Rows have `model = "daily"` and
-#'   `valid_time` = the start of the local day.
+#'   archived to `forecast_aux`. Rows have `model = "daily"` (the site's
+#'   own web-API forecast) or `model = "daily_precis"` (the town précis
+#'   fallback, whose `forecast_aux` `location` row names the area) and
+#'   `valid_time` = the start of the local day (précis: of the period).
 #' * the **hourly** forecast (~3 days; web API only) -- temperature,
 #'   apparent temperature, dew point, humidity, wind speed/direction/gusts,
 #'   UV index, chance of rain (`precipitation_probability`) and rain amounts
@@ -168,20 +184,23 @@
 #'
 #' `issue_time` is BOM's own issue time for the product.
 #'
-#' The daily forecast comes from the official précis product feed when the
-#' site has a BOM area code (`resolved: bom: aac:` in site YAML, e.g.
-#' `NSW_PT072` for Katoomba); otherwise, or if that feed fails, from the
-#' unofficial `api.weather.bom.gov.au` web API. The web API is keyed by the
-#' site's 6-character geohash (`resolved: bom: geohash:`), is **opt-in**
-#' (`allow_web_api = TRUE`) and at-your-own-risk (SCOPING section 5.1), and
-#' is the only channel for the hourly forecast.
+#' The daily forecast comes first from the unofficial
+#' `api.weather.bom.gov.au` web API for the site's own 6-character geohash
+#' (`resolved: bom: geohash:`), when it is allowed. Only if that fails (or
+#' the web API is not allowed) does it come from the official précis product
+#' feed for the site's BOM area code (`resolved: bom: aac:`, e.g.
+#' `NSW_PT072` for Katoomba) -- a town forecast, which for a site between
+#' towns is some other place's (Blaxland's nearest précis town is
+#' Springwood). The web API is **opt-in** (`allow_web_api = TRUE`) and
+#' at-your-own-risk (SCOPING section 5.1), and is the only channel for the
+#' hourly forecast.
 #'
 #' @param ladder A list of transport rungs (see `ladder_fetch()`) for the
-#'   daily product. Defaults to the précis feed, then (when `allow_web_api`)
-#'   the web API.
+#'   daily product. Defaults to the web API (when `allow_web_api`), then the
+#'   précis feed.
 #' @param allow_web_api Logical, default `FALSE`. Enables the web API for the
-#'   daily fallback, the hourly forecast, and geohash search in
-#'   [resolve_station()].
+#'   daily forecast (preferred over the précis), the hourly forecast, and
+#'   geohash search in [resolve_station()].
 #' @param store_root Single string, the store root used for breaker-state
 #'   persistence.
 #' @param source_id Single string stamped into the `source` column. Default
@@ -210,8 +229,8 @@ source_bom_forecast <- S7::new_class(
                          products = c("daily", "hourly")) {
     products <- match.arg(products, c("daily", "hourly"), several.ok = TRUE)
     ladder <- ladder %||% c(
-      list(.bom_precis_rung()),
-      if (isTRUE(allow_web_api)) list(.bom_webapi_daily_rung())
+      if (isTRUE(allow_web_api)) list(.bom_webapi_daily_rung()),
+      list(.bom_precis_rung())
     )
     S7::new_object(
       met_adapter(

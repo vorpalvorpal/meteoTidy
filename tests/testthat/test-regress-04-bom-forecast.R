@@ -32,7 +32,7 @@ describe("problem 4: BOM daily forecast from the official précis product", {
     cap <- new.env()
     fc <- bom_fc(site, allow_web_api = FALSE, capture = cap)
     expect_true(any(grepl("IDN11060.xml", cap$urls, fixed = TRUE)))
-    daily <- fc[fc$model == "daily", ]
+    daily <- fc[fc$model == "daily_precis", ]
     # Katoomba's 30 Sep forecast in the recorded product: min 8, max 22.
     d <- daily[daily$valid_time == as.POSIXct("2026-09-29 14:00:00", tz = "UTC"), ]
     expect_equal(d$value[d$variable == "temperature_2m_min"], 8)
@@ -106,7 +106,7 @@ describe("problem 4: BOM web API (allow_web_api = TRUE) daily + hourly", {
     cap <- new.env()
     fc <- bom_fc(site, allow_web_api = FALSE, capture = cap)
     expect_false(any(grepl("api.weather.bom.gov.au", cap$urls, fixed = TRUE)))
-    expect_equal(unique(fc$model), "daily")
+    expect_equal(unique(fc$model), "daily_precis")
   })
 
   it("serves each site's own location (Blaxland differs from Katoomba)", {

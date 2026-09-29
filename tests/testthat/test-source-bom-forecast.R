@@ -15,7 +15,7 @@ describe("précis XML → canonical forecast", {
     out <- fetch_forecast(adapter, site, "temperature_2m_max", win)
     expect_canonical_forecast(out)
     # the edited BOM product has no NWP model; rows are labelled by product
-    expect_true(all(out$model == "daily"))
+    expect_true(all(out$model == "daily_precis"))
     expect_equal(out$value, c(30, 28))
   })
 
