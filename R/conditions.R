@@ -210,7 +210,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_warning_source_stale",
       "meteoTidy_error_store_path_too_long",
       "meteoTidy_error_store_write_unverified",
-      "meteoTidy_warning_openmeteo_model_failed"
+      "meteoTidy_warning_openmeteo_model_failed",
+      "meteoTidy_error_bad_wide_stat"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -300,7 +301,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale).",
       "A store path (or the planned paths under a store_root) would exceed what Windows can open (259 characters).",
       "A part file just written to the store could not be read back with the expected row count.",
-      "One of several configured Open-Meteo models could not be fetched (or its run time was unknown); the other models were still archived."
+      "One of several configured Open-Meteo models could not be fetched (or its run time was unknown); the other models were still archived.",
+      "met_wide() was asked for a statistic other than \"mean\", \"median\" or a percentile \"p1\"...\"p99\"."
     ),
     stringsAsFactors = FALSE
   )
