@@ -64,6 +64,24 @@ describe("item 2: fail_on = 'failed'", {
     expect_false(grepl("eagleio", conditionMessage(err)))
   })
 
+  it("does not fail a site whose only source is a stale station", {
+    # Found by the live acceptance (check i): with eagle.io as the site's
+    # only source, nothing was acquired, the site rolled up to "failed" and
+    # fail_on = "failed" aborted although no source had failed.
+    root <- withr::local_tempdir()
+    cfg <- list(store_root = root, obs_sources = "eagleio", forecast_sources = character(0))
+    withr::local_envvar(FU02_EAGLE_KEY = "test-key")
+    run <- function(fail_on) {
+      suppressMessages(with_routed_http(fu02_routes(), {
+        met_sync_live(fu02_site(root), now = prod_now(), config = cfg, fail_on = fail_on)
+      }))
+    }
+    status <- run("none")
+    expect_equal(status$sources[[1]]$status, "stale")
+    expect_no_error(run("failed"))
+    expect_error(run("any"), class = "meteoTidy_error_sync_failed")
+  })
+
   it("fails on a site error", {
     status <- tibble::tibble(site_id = "blax", status = "error", message = "boom",
                              sources = list(.empty_source_status()))

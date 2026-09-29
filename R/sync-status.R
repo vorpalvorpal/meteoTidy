@@ -120,7 +120,14 @@ NULL
 # "none" -- never.
 .apply_fail_on <- function(verb, status_tbl, fail_on) {
   failed_by_site <- lapply(status_tbl$sources %||% vector("list", nrow(status_tbl)), .failed_sources)
-  site_failed <- status_tbl$status %in% c("failed", "error") | lengths(failed_by_site) > 0
+  # A site that acquired nothing only because every source was stale rolls
+  # up to "failed", but under fail_on = "failed" stale never fails a run.
+  all_stale <- vapply(status_tbl$sources %||% vector("list", nrow(status_tbl)), function(s) {
+    !is.null(s) && nrow(s) > 0 && all(s$status == "stale")
+  }, logical(1))
+  site_failed <- status_tbl$status == "error" |
+    (status_tbl$status == "failed" & !all_stale) |
+    lengths(failed_by_site) > 0
   bad <- switch(fail_on,
     none = FALSE,
     any = any(status_tbl$status != "ok"),
