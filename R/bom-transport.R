@@ -56,13 +56,25 @@ ladder_fetch <- function(ladder, request, breaker, now = .now()) {
   eligible <- Filter(function(rung) {
     request$product %in% rung$applies_to && !breaker_tripped(breaker, rung$id)
   }, ladder)
+  reasons <- character(0)
 
   for (rung in eligible) {
     result <- tryCatch(
       list(ok = TRUE, value = rung$fetch_fn(request, now)),
-      meteoTidy_error_http_gone = function(cnd) list(ok = FALSE, persistent = TRUE),
-      meteoTidy_error_http_client_error = function(cnd) list(ok = FALSE, persistent = FALSE),
-      meteoTidy_error = function(cnd) list(ok = FALSE, persistent = TRUE)
+      # A rung the site is not configured for (e.g. no BOM area code) is
+      # skipped without a breaker strike: nothing is wrong with the feed.
+      meteoTidy_error_bom_rung_unconfigured = function(cnd) {
+        list(ok = FALSE, persistent = FALSE, reason = conditionMessage(cnd))
+      },
+      meteoTidy_error_http_gone = function(cnd) {
+        list(ok = FALSE, persistent = TRUE, reason = conditionMessage(cnd))
+      },
+      meteoTidy_error_http_client_error = function(cnd) {
+        list(ok = FALSE, persistent = FALSE, reason = conditionMessage(cnd))
+      },
+      meteoTidy_error = function(cnd) {
+        list(ok = FALSE, persistent = TRUE, reason = conditionMessage(cnd))
+      }
     )
 
     if (isTRUE(result$ok)) {
@@ -72,16 +84,22 @@ ladder_fetch <- function(ladder, request, breaker, now = .now()) {
       return(out)
     }
 
+    reason <- gsub("([{}])", "\\1\\1", gsub("\\s+", " ", result$reason))
+    reasons <- c(reasons, sprintf("%s: %s", rung$id, reason))
     if (isTRUE(result$persistent)) {
       breaker <- breaker_strike(breaker, rung$id, now = now)
     }
   }
 
+  if (length(eligible) == 0) {
+    reasons <- "no rung can serve it (none configured, or all tripped by the breaker)"
+  }
+  names(reasons) <- rep("x", length(reasons))
+  # The strikes accrued above ride on the condition (`breaker` field) so the
+  # caller can persist them even though the fetch failed.
   abort_meteo(
-    c(
-      "All BOM transports failed for product {.val {request$product}}.",
-      "i" = "Every rung that can serve this product is either tripped or failed just now."
-    ),
-    class = "bom_all_transports_failed"
+    c("All BOM transports failed for product {.val {request$product}}.", reasons),
+    class = "bom_all_transports_failed",
+    breaker = breaker
   )
 }

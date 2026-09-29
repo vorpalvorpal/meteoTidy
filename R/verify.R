@@ -367,7 +367,10 @@ rolling_origin_score <- function(pairs, fit_fn, apply_fn, step, buffer) {
 #' @noRd
 verify_run <- function(store_root, site, sources, now = .now()) {
   sid <- site_id(site)
+  with_store_lock(store_root, .verify_run_impl(store_root, site, sid, sources))
+}
 
+.verify_run_impl <- function(store_root, site, sid, sources) {
   report <- .verify_report(store_root, site, sid, sources)
   # REPLACE the stored report rather than appending a new part-file:
   # read_verification_report() rbinds every part-file in the directory, so an

@@ -67,6 +67,10 @@
 #' @keywords internal
 #' @noRd
 obs_transport_write <- function(store_root, df, now = .now()) {
+  with_store_lock(store_root, .obs_transport_write_impl(store_root, df, now = now))
+}
+
+.obs_transport_write_impl <- function(store_root, df, now = .now()) {
   if (is.null(df) || nrow(df) == 0) {
     return(invisible(store_root))
   }

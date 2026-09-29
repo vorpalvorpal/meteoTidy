@@ -1,4 +1,4 @@
-# the stable signatures are snapshot-guarded / snapshots formals() so a breaking contract change is caught in review
+# the stable signatures are snapshot-guarded: snapshots formals() so a breaking contract change is caught in review
 
     Code
       names(formals(met_history))

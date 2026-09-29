@@ -22,7 +22,7 @@ NULL
   c(
     "temperature_2m", "relative_humidity_2m", "surface_pressure",
     "pressure_msl", "precipitation", "cloud_cover", "direct_radiation",
-    "diffuse_radiation", "wind_speed_10m", "wind_direction_10m",
+    "diffuse_radiation", "shortwave_radiation", "wind_speed_10m", "wind_direction_10m",
     "wind_gusts_10m", "wind_speed_80m", "wind_direction_80m",
     "wind_speed_120m", "wind_direction_120m", "wind_speed_180m",
     "wind_direction_180m", "boundary_layer_height",
@@ -58,13 +58,25 @@ NULL
 # `stat` summary rows (e.g. a source's own precomputed "min"/"max") are
 # excluded from the mean: mixing heterogeneous stats into an unweighted
 # average would be meaningless.
+#
+# A product that publishes a variable ONLY as distribution summaries (BOM's
+# hourly rain: 10/25/50 % chance amounts, stored as p90/p75/p50 rows) has no
+# deterministic row to widen; the wide column then takes the "mean" summary
+# if present, else the median ("p50").
 .widen_forecast <- function(fc, variables) {
+  fc <- fc[fc$variable %in% variables, , drop = FALSE]
   base <- unique(fc["valid_time"])
   base <- base[order(base$valid_time), , drop = FALSE]
 
   wide <- base
   for (v in variables) {
     sub <- fc[fc$variable == v & is.na(fc$stat), c("valid_time", "value")]
+    if (nrow(sub) == 0) {
+      for (st in c("mean", "p50")) {
+        sub <- fc[fc$variable == v & fc$stat %in% st, c("valid_time", "value")]
+        if (nrow(sub) > 0) break
+      }
+    }
     # A requested variable absent from the archive window (or an entirely
     # empty window) must yield an all-NA column, not an error --
     # stats::aggregate() aborts on zero rows ("no rows to aggregate").
@@ -177,13 +189,24 @@ NULL
 #' ([met_record()]) for hindcast; `kind = "forecast"` reads the archived
 #' forecast ([met_forecast_archive()]) for prediction.
 #'
-#' For `kind = "forecast"`, only the **latest archived issuance** per
-#' `(source, model)` is served: the archive holds every past issuance
-#' overlapping the window (SCOPING section 9's archive-on-every-sync
-#' policy), and pooling them would average the current forecast with stale
-#' ones. Ensemble members within that issuance are reported as the ensemble
-#' mean; per-member trajectories remain available via
-#' [met_forecast_archive()].
+#' For `kind = "forecast"`, exactly **one source and one model** is served
+#' -- never a mean across sources or models (which would blend, say, an
+#' Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
+#' product nobody issued). `source`/`model` choose it; by default the
+#' archive's only source (or `"openmeteo"` when there are several) and that
+#' source's only model (or `"best_match"`, then `"hourly"`, when there are
+#' several). Of that source/model, only the **latest archived issuance** is
+#' served: the archive holds every past issuance overlapping the window
+#' (SCOPING section 9's archive-on-every-sync policy). Ensemble members
+#' within that issuance are reported as the ensemble mean; per-member
+#' trajectories remain available via [met_forecast_archive()]. A variable
+#' published only as quantiles (BOM's hourly rain) is served as its
+#' median (`p50`).
+#'
+#' meteoHazard contract: `wind_gusts_10m` is never below `wind_speed_10m`
+#' in any row (gusts are raised to the mean wind where a product's own
+#' values disagree), and `shortwave_radiation` is derived as
+#' `direct_radiation + diffuse_radiation` when not archived itself.
 #'
 #' @param site A single `met_site` (or a `met_sites` of length one) -- the
 #'   wide table is a per-site product.
@@ -193,6 +216,8 @@ NULL
 #'   variable appears as a column even if absent from the underlying data
 #'   (an all-`NA` column) -- the stable section 3.1 shape. Defaults to the
 #'   full section 3.1 contract set (see SCOPING section 3.1).
+#' @param source,model For `kind = "forecast"`: the archived source and
+#'   model to serve (see Details). `NULL` picks the default.
 #' @param now Injectable current time; see `.now()`.
 #' @return A `met_table`.
 #' @family met-table
@@ -204,7 +229,7 @@ NULL
 #'         kind = "record")
 #' }
 met_wide <- function(site, window, kind = c("forecast", "record"), variables = NULL,
-                     now = .now()) {
+                     now = .now(), source = NULL, model = NULL) {
   kind <- rlang::arg_match(kind)
   sites <- as_met_sites(site)
   if (length(sites@sites) != 1) {
@@ -226,12 +251,14 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
     wide$site_id <- NULL
   } else {
     long <- met_forecast_archive(site, valid_from = window$from, valid_to = window$to)
+    long <- .select_source_model(long, source, model)
     long <- .latest_issuance(long)
     long <- correct_forecast(site_store_root(s), s, long, now = now)
     wide <- .widen_forecast(long, variables = value_cols)
     names(wide)[names(wide) == "valid_time"] <- "time"
   }
 
+  wide <- .wide_hazard_contract(wide)
   attr(wide$time, "tzone") <- "UTC"
 
   provenance <- .met_wide_provenance(site_store_root(s), site_id(s), value_cols, long)
@@ -244,4 +271,64 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   )
 
   new_met_table(wide, provenance = provenance, keys = keys, versions = versions)
+}
+
+# Restrict an archive read to ONE (source, model) -- problem 8 of the
+# production review: met_wide() used to average every source and model in
+# the window together. Defaults are deterministic (see met_wide() docs).
+.select_source_model <- function(fc, source, model) {
+  if (nrow(fc) == 0) {
+    return(fc)
+  }
+  pick <- function(have, wanted, preferred, what) {
+    if (!is.null(wanted)) {
+      if (!wanted %in% have) {
+        abort_meteo(
+          c(
+            "No archived forecast from {what} {.val {wanted}} in this window.",
+            "i" = "Available: {.val {have}}."
+          ),
+          class = "wide_source_unavailable"
+        )
+      }
+      return(wanted)
+    }
+    if (length(have) == 1) {
+      return(have)
+    }
+    hit <- intersect(preferred, have)
+    if (length(hit) > 0) {
+      return(hit[[1]])
+    }
+    abort_meteo(
+      c(
+        "Several {what}s are archived for this window; choose one.",
+        "i" = "Available: {.val {have}}. Pass {.arg {what}} to {.fn met_wide}."
+      ),
+      class = "wide_source_unavailable"
+    )
+  }
+  src <- pick(sort(unique(fc$source)), source, "openmeteo", "source")
+  fc <- fc[fc$source == src, , drop = FALSE]
+  mdl_have <- sort(unique(ifelse(is.na(fc$model), "", fc$model)))
+  mdl <- pick(mdl_have, model, c("best_match", "hourly"), "model")
+  fc[ifelse(is.na(fc$model), "", fc$model) == mdl, , drop = FALSE]
+}
+
+# Post-widening guarantees meteoHazard relies on.
+.wide_hazard_contract <- function(wide) {
+  # Gusts can never be below the mean wind; a product (or the member mean of
+  # an ensemble, or a correction) can still produce gust < wind, which makes
+  # meteoHazard::dust_hazard() abort.
+  if (all(c("wind_gusts_10m", "wind_speed_10m") %in% names(wide))) {
+    low <- !is.na(wide$wind_gusts_10m) & !is.na(wide$wind_speed_10m) &
+      wide$wind_gusts_10m < wide$wind_speed_10m
+    wide$wind_gusts_10m[low] <- wide$wind_speed_10m[low]
+  }
+  # Global horizontal = direct + diffuse, for litter_risk(use_wetness_state = TRUE).
+  if (all(c("shortwave_radiation", "direct_radiation", "diffuse_radiation") %in% names(wide))) {
+    gap <- is.na(wide$shortwave_radiation)
+    wide$shortwave_radiation[gap] <- wide$direct_radiation[gap] + wide$diffuse_radiation[gap]
+  }
+  wide
 }

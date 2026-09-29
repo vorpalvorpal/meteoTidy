@@ -35,13 +35,28 @@
   status %in% .http_transient_codes || status >= 500L
 }
 
-# Exponential backoff with a small fixed base; not injectable via `now`
-# because it only affects wall-clock sleep duration, not any comparison the
-# package makes against `now`. Kept short so tests that do exercise real
-# retries (none currently do; the req_perform mock tests short-circuit before
-# a second attempt where relevant) stay fast.
-.http_backoff <- function(attempt) {
-  Sys.sleep(min(0.05 * 2^(attempt - 1), 1))
+# Backoff before retrying a transient failure (problem 6: the free Open-Meteo
+# tier answers large requests with HTTP 429, and the old 50 ms-to-1 s backoff
+# gave up long before its rate window reset). Honours a server `Retry-After`
+# (seconds) when present, else waits base * 2^(attempt - 1) seconds; both are
+# capped. `base`/`cap` come from options so tests (and impatient callers) can
+# shrink them: meteoTidy.http_backoff_base (default 2 s) and
+# meteoTidy.http_backoff_max (default 60 s).
+.http_backoff <- function(attempt, resp = NULL) {
+  base <- getOption("meteoTidy.http_backoff_base", 2)
+  cap <- getOption("meteoTidy.http_backoff_max", 60)
+  wait <- base * 2^(attempt - 1)
+  retry_after <- if (!is.null(resp)) httr2::resp_header(resp, "retry-after") else NULL
+  if (!is.null(retry_after)) {
+    ra <- suppressWarnings(as.numeric(retry_after))
+    if (!is.na(ra)) wait <- max(wait, ra)
+  }
+  .http_sleep(min(wait, cap))
+}
+
+# The one place the HTTP seam sleeps (mockable in tests).
+.http_sleep <- function(seconds) {
+  Sys.sleep(seconds)
 }
 
 #' Perform a GET request through the package's single HTTP seam
@@ -72,7 +87,7 @@
 #' @return The response body, shaped per `parse`.
 #' @keywords internal
 #' @noRd
-.http_get <- function(url, headers = list(), query = list(), retry = 3, now = .now(),
+.http_get <- function(url, headers = list(), query = list(), retry = 5, now = .now(),
                       parse = c("json", "lines", "raw")) {
   parse <- match.arg(parse)
   if (identical(Sys.getenv("METEOTIDY_NO_NET"), "1")) {
@@ -119,7 +134,7 @@
     }
 
     if (.is_transient_status(status) && attempt < retry) {
-      .http_backoff(attempt)
+      .http_backoff(attempt, resp)
       next
     }
 
@@ -199,7 +214,8 @@
 
   rlang::check_installed("curl", reason = "to fetch BOM FTP/mirror product feeds.")
 
-  resp <- curl::curl_fetch_memory(url)
+  handle <- curl::new_handle(useragent = "Mozilla/5.0 (compatible; meteoTidy R package)")
+  resp <- curl::curl_fetch_memory(url, handle = handle)
   if (resp$status_code >= 400L) {
     class <- if (resp$status_code %in% .http_gone_codes) "http_gone" else "http_client_error"
     abort_meteo(

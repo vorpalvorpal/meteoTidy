@@ -14,12 +14,12 @@ describe("silo_qcode_map()", {
     expect_true(interp$method %in% c("imputed", "model_fill"))
     expect_equal(interp$qc_flag, "ok")
 
-    grid <- silo_qcode_map("75") # 75 means interpolated/grid (DataDrill)
+    grid <- silo_qcode_map("35") # 35 = anomaly-method interpolation (SILO docs)
     expect_true(grid$method %in% c("imputed", "model_fill"))
   })
 
   it("maps long-term-average fallback codes to suspect", {
-    lta <- silo_qcode_map("35")         # long-term-average fallback
+    lta <- silo_qcode_map("75")         # 75 = long-term-average fallback (SILO docs)
     expect_equal(lta$qc_flag, "suspect")
   })
 
@@ -49,9 +49,9 @@ describe("code mapping applied through fetch()", {
                 to = as.POSIXct("2026-12-31", tz = "UTC"))
     # one observed value, one long-term-average fallback value
     frame <- make_silo_frame(dates = as.Date(c("2026-01-15", "2026-01-16")),
-                             value = c(30.5, 31.0), qcode = c("0", "35"))
+                             value = c(30.5, 31.0), qcode = c("0", "75"))
     with_mocked_silo(frame, {
-      out <- fetch(adapter, site, "temperature_2m", win)
+      out <- fetch(adapter, site, "temperature_2m_max", win)
     })
     out <- out[order(out$datetime_utc), ]
     expect_equal(out$method[1], "measured")

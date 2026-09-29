@@ -86,20 +86,31 @@
 # `variables` are requested under their dictionary names verbatim (Open-Meteo
 # names already equal our dictionary names for the §3.1 set). Canonical units
 # are always requested explicitly (the km/h wind-speed footgun, SCOPING §3.1).
+#
+# Live-forecast products (`forecast`, `ensemble`) request the FULL forecast
+# horizon (`forecast_days`) from the current run, never a past date window:
+# the archive's `issue_window` bounds issue times, not valid times, and
+# reusing it as start/end dates (problem 2 of the production review) turned
+# every "issuance" into past data. The historical/hindcast products keep the
+# date window, which is what they are for.
 .openmeteo_build_url <- function(product, site, variables, window, api_key = NULL,
-                                 models = NULL) {
+                                 models = NULL, forecast_days = NULL) {
   block <- .openmeteo_block_name(product)
   host <- .openmeteo_host(product, has_key = !is.null(api_key))
 
   params <- list(
     latitude = as.numeric(units::drop_units(site_coords(site)$latitude)),
-    longitude = as.numeric(units::drop_units(site_coords(site)$longitude)),
-    start_date = format(window$from, "%Y-%m-%d", tz = "UTC"),
-    end_date = format(window$to, "%Y-%m-%d", tz = "UTC"),
-    wind_speed_unit = "ms",
-    temperature_unit = "celsius",
-    precipitation_unit = "mm"
+    longitude = as.numeric(units::drop_units(site_coords(site)$longitude))
   )
+  if (product %in% .openmeteo_horizon_products()) {
+    params$forecast_days <- forecast_days %||% .openmeteo_default_forecast_days(product)
+  } else {
+    params$start_date <- format(window$from, "%Y-%m-%d", tz = "UTC")
+    params$end_date <- format(window$to, "%Y-%m-%d", tz = "UTC")
+  }
+  params$wind_speed_unit <- "ms"
+  params$temperature_unit <- "celsius"
+  params$precipitation_unit <- "mm"
   params[[block]] <- paste(variables, collapse = ",")
 
   if (!is.null(models) && length(models) > 0) {
@@ -111,4 +122,132 @@
 
   query_string <- .openmeteo_build_query_string(params)
   sprintf("%s?%s", host, query_string)
+}
+
+# ---- live-forecast horizon, default models, run (init) time -----------------
+
+# Products that are fetched as "the current run, full horizon".
+.openmeteo_horizon_products <- function() {
+  c("forecast", "ensemble")
+}
+
+# The longest horizon each product serves on the free API: 16 days for the
+# deterministic Forecast API, 15 days for ECMWF IFS ensemble (the ensemble
+# API itself allows up to 35 days for models that run that long -- override
+# with `forecast_days` on source_openmeteo()).
+.openmeteo_default_forecast_days <- function(product) {
+  switch(product, forecast = 16L, ensemble = 15L, 16L)
+}
+
+# Default underlying models when none are configured. The Ensemble API has no
+# "best_match" and returns HTTP 400 without `models` (problem 6), so it
+# defaults to ECMWF IFS 0.25 deg. The deterministic Forecast API defaults to
+# Open-Meteo's "best_match" blend (the only single choice that serves every
+# section 3.1 variable, e.g. soil moisture and boundary-layer height).
+.openmeteo_default_models <- function(product) {
+  switch(product, ensemble = "ecmwf_ifs025", "best_match")
+}
+
+# Default variables for the ensemble: the ensemble API serves a subset of the
+# dictionary (unsupported ones come back with unit "undefined"), and every
+# extra variable multiplies an already 51-member request -- large requests hit
+# HTTP 429 on the free tier. These are the variables the hazard models and
+# the email actually use probabilistically.
+.openmeteo_ensemble_default_variables <- function() {
+  c(
+    "temperature_2m", "relative_humidity_2m", "precipitation",
+    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"
+  )
+}
+
+# Default variables for the hourly deterministic products: every dictionary
+# variable Open-Meteo serves under the same hourly name. Daily-only
+# dictionary variables (temperature_2m_max, ...) are not valid hourly
+# parameters and would make the request fail with HTTP 400.
+.openmeteo_hourly_variables <- function() {
+  c(
+    .met31_variables(), "dewpoint_2m", "shortwave_radiation",
+    "precipitation_probability", "apparent_temperature", "cape", "uv_index"
+  )
+}
+
+# The metadata dataset name for a model, used to look up its latest run's
+# initialisation time at <host>/data/<name>/static/meta.json. Ensemble
+# datasets carry a suffix; unknown models fall back to their own id (and, if
+# that has no metadata, to the run-cycle floor in .openmeteo_issue_time()).
+.openmeteo_meta_name <- function(product, model) {
+  if (identical(product, "ensemble")) {
+    known <- c(
+      ecmwf_ifs025 = "ecmwf_ifs025_ensemble",
+      ecmwf_aifs025 = "ecmwf_aifs025_ensemble",
+      gfs025 = "ncep_gefs025",
+      gfs05 = "ncep_gefs05",
+      icon_seamless = "dwd_icon_eps",
+      gem_global = "cmc_gem_geps",
+      bom_access_global_ensemble = "bom_access_global_ensemble"
+    )
+    return(unname(known[model]) %|NA|% paste0(model, "_ensemble"))
+  }
+  model
+}
+
+`%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
+
+.openmeteo_meta_url <- function(product, model, has_key) {
+  spec <- .openmeteo_endpoint_path(product)
+  subdomain <- if (has_key) paste0("customer-", spec$subdomain) else spec$subdomain
+  sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
+          subdomain, .openmeteo_meta_name(product, model))
+}
+
+# Floor a time to the start of its 6-hourly NWP run cycle (00/06/12/18 UTC).
+.floor_run_cycle <- function(t, hours = 6) {
+  secs <- as.numeric(t)
+  as.POSIXct(floor(secs / (hours * 3600)) * hours * 3600, origin = "1970-01-01", tz = "UTC")
+}
+
+#' The issue (run initialisation) time of the forecast about to be fetched
+#'
+#' Problem 3 of the production review: stamping `issue_time = now` made every
+#' hourly sync look like a new issuance, so dedup never matched and the same
+#' run was archived again and again. For a named model this reads the run's
+#' initialisation time from Open-Meteo's model metadata
+#' (`last_run_initialisation_time`). "best_match" (a blend) has no single run
+#' time, and metadata can be unavailable, so the fallback is `now` floored to
+#' the 6-hourly run cycle: every sync within one cycle maps to the same
+#' issuance, which is stored once.
+#'
+#' @return A UTC POSIXct scalar (whole seconds), never later than `now`.
+#' @keywords internal
+#' @noRd
+.openmeteo_issue_time <- function(product, model, api_key, now) {
+  if (is.null(model) || identical(model, "best_match") ||
+        !(product %in% .openmeteo_horizon_products())) {
+    # best_match blends several models, so it has no single run: the
+    # 6-hourly cycle floor is the documented convention.
+    return(.floor_run_cycle(now))
+  }
+  # A named model must be stamped with its real run. Guessing (the clock's
+  # 6 h floor) mislabelled ECMWF's 18 UTC ensemble as 06 UTC in a live run;
+  # failing lets the next sync archive it correctly instead.
+  meta_error <- NULL
+  meta <- tryCatch(
+    .http_get(.openmeteo_meta_url(product, model, has_key = !is.null(api_key)),
+              query = list(), now = now),
+    error = function(e) {
+      meta_error <<- .one_line(conditionMessage(e))
+      NULL
+    }
+  )
+  init <- if (is.list(meta)) suppressWarnings(as.numeric(meta$last_run_initialisation_time)) else NA
+  init <- if (length(init) == 1 && !is.na(init)) as.POSIXct(init, origin = "1970-01-01", tz = "UTC") else NA
+  if (is.na(init) || init > now) {
+    why <- gsub("([{}])", "\1\1", meta_error %||% "no valid last_run_initialisation_time")
+    abort_meteo(
+      c("Could not determine the run time of Open-Meteo model {.val {model}} ({product}); not archiving it this time.",
+        x = why),
+      class = "openmeteo_run_unknown"
+    )
+  }
+  init
 }

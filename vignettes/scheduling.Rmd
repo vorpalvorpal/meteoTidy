@@ -181,3 +181,137 @@ met_backfill(
   aws_export = "exports/new_site-logger.csv"
 )
 ```
+
+## Production setup: hourly live + daily sync
+
+This is the configuration used for the Katoomba (`kat`) and Blaxland
+(`blax`) waste-management facilities. It is the one the live acceptance
+script (`inst/acceptance/live_sync.R`) checks.
+
+### Site YAML
+
+The full file ships as `system.file("acceptance", "sites.yaml", package =
+"meteoTidy")`; replace `@STORE_ROOT@` with the store directory. It holds no
+secrets: API keys are named by environment variable only. One site:
+
+```yaml
+sites:
+  - site_id: kat
+    latitude: -33.70
+    longitude: 150.32
+    elevation: 1000
+    timezone: Australia/Sydney
+    store_root: D:/meteo/store
+    resolved:
+      bom:
+        geohash: r64bhq        # BOM web-API location (forecast + obs)
+        aac: NSW_PT072         # Katoomba, précis product IDN11060
+        wmo: "94743"           # Mount Boyce AWS, obs product IDN60901
+    sources:
+      eagleio:                 # listed first: it wins over bom_obs in history
+        adapter: eagleio
+        api_key_env: EAGLE_API_KEY
+        nodes:
+          precipitation: 64642e52fbaed638fdb04110
+          temperature_2m: 64642e52fbaed638fdb04100
+      bom_obs:     {adapter: bom_obs, allow_web_api: true}
+      silo:        {adapter: silo, dataset: data_drill, api_key_env: SILO_API_KEY}
+      openmeteo:   {adapter: openmeteo, product: forecast}
+      om_ens:      {adapter: openmeteo, product: ensemble, models: [ecmwf_ifs025]}
+      bom_forecast: {adapter: bom_forecast, allow_web_api: true}
+```
+
+Blaxland is the same, with `latitude: -33.73`, `longitude: 150.61`,
+`elevation: 250`, `geohash: r65050`, `aac: NSW_PT129` (Springwood),
+`wmo: "94763"` (Penrith Lakes), and eagle.io nodes
+`precipitation: 647e9492dac9bf46aa1ffd0f` and
+`temperature_2m: 647e9492dac9bf46aa1ffd02`.
+
+### Config
+
+```{r}
+store <- "D:/meteo/store"
+
+live_config <- list(
+  store_root = store,
+  obs_sources = c("bom_obs", "eagleio"),
+  forecast_sources = c("openmeteo", "om_ens", "bom_forecast"),
+  lock_timeout = 1800            # seconds to wait for an overlapping run
+)
+
+daily_config <- list(
+  store_root = store,
+  obs_sources = c("bom_obs", "eagleio", "silo"),
+  forecast_sources = c("openmeteo", "om_ens", "bom_forecast"),
+  refetch_windows = list(
+    silo = as.difftime(30, units = "days"),    # SILO revises recent days
+    eagleio = as.difftime(7, units = "days"),
+    bom_obs = as.difftime(3, units = "days")   # the 72-hour product
+  ),
+  lock_timeout = 1800
+)
+```
+
+Set `SILO_API_KEY` (the SILO email address) and `EAGLE_API_KEY` in the
+scheduler's environment.
+
+### Schedule
+
+- **`met_sync_live()` hourly, at 20 minutes past the hour.** BOM's
+  half-hourly observations and hourly forecast re-issues are in by then.
+  Open-Meteo runs every 6 hours and the archive keeps one copy per run, so
+  hourly polling costs little.
+- **`met_sync_daily()` once a day at 10:30 Australia/Sydney.** SILO's
+  previous day closes at 9 am local, and the 30-day refetch window picks up
+  later SILO revisions.
+
+Both verbs lock `store_root`. If a slow hourly run overlaps the next one, the
+second waits for the lock (up to `lock_timeout`) rather than writing
+duplicates, so there is no need for the scheduler to prevent overlap.
+
+A minimal `Rscript` entry point:
+
+```{r}
+# run-sync-live.R
+library(meteoTidy)
+sites <- read_sites_yaml("D:/meteo/sites.yaml")
+met_sync_live(sites, config = live_config, fail_on = "all")
+```
+
+### Detecting failure
+
+Each run writes one line per site to **stderr**, for example:
+
+```
+meteoTidy met_sync_daily kat: ok | bom_obs ok 1332 | eagleio ok 2016 | silo ok 150 | openmeteo ok 8998 | om_ens ok 107304 | bom_forecast ok 908
+meteoTidy met_sync_live blax: degraded | bom_obs ok 884 | eagleio STALE (eagle.io station is stale: no data from "eagleio" for the requested window. ℹ Last value reported 2026-09-24 03:00 UTC.) | openmeteo ok 8998 | om_ens ok 107304 | bom_forecast ok 908
+```
+
+`fail_on` decides when the process exits non-zero:
+
+| `fail_on` | Exit status is non-zero when |
+| --------- | ---------------------------- |
+| `"none"` (default) | never; inspect the returned table instead |
+| `"all"`   | every site failed outright (nothing was acquired) |
+| `"any"`   | any site is not fully `"ok"`, including one stale or failed source |
+
+Use `"all"` for alarms, and log stderr for the per-source detail. A station
+that is offline (as Blaxland's eagle.io logger has been since
+24 September 2026) makes every run `"degraded"`, so `"any"` would alarm on
+every run until it is fixed.
+
+The returned tibble has the same information, structured: `status` per site
+and a `sources` list-column with each source's `status` (`"ok"`,
+`"failed"`, `"stale"`), row count `n` and `message`. With `fail_on`, the
+error condition (`meteoTidy_error_sync_failed`) carries that table as
+`cnd$status`.
+
+### Reading for meteoHazard
+
+`met_wide()` serves one source and model per call, never a blend:
+
+```{r}
+next72 <- list(from = now, to = now + 71 * 3600)
+met <- met_wide(sites@sites[[1]], next72)                           # Open-Meteo best_match
+bom <- met_wide(sites@sites[[1]], next72, source = "bom_forecast", model = "hourly")
+```

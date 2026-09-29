@@ -13,6 +13,10 @@
 # `pressure_msl`; `ventilation_state()` optionally consumes the directions.
 
 .meteo_builtin_variables <- function() {
+  vctrs::vec_rbind(.meteo_core_variables(), .meteo_forecast_product_variables())
+}
+
+.meteo_core_variables <- function() {
   variable <- c(
     "temperature_2m", "relative_humidity_2m", "dewpoint_2m",
     "surface_pressure", "pressure_msl", "precipitation", "cloud_cover",
@@ -113,6 +117,49 @@
       "Volumetric soil moisture, 1-3 cm depth.",
       "Convective available potential energy.",
       "UV index."
+    )
+  )
+}
+
+# Variables added for the production forecast archive (2026-09, problems 4 and
+# 8 of the production review). Names follow Open-Meteo's conventions (hourly
+# names for hourly quantities, `_max`/`_min`/`_sum` suffixes for DAILY
+# aggregates), so BOM's edited forecast maps onto the dictionary instead of
+# being mislabelled (the old précis parser stored daily Tmax as
+# temperature_2m).
+#
+# Quantile forecasts ("X % chance of at least A mm") are not separate
+# variables: they are rows of the base variable with `stat = "p<100-X>"`.
+.meteo_forecast_product_variables <- function() {
+  variable <- c(
+    "shortwave_radiation", "apparent_temperature", "precipitation_probability",
+    "temperature_2m_max", "temperature_2m_min", "precipitation_sum",
+    "precipitation_probability_max", "uv_index_max"
+  )
+  tibble::tibble(
+    variable = variable,
+    unit = c("W/m2", "degC", "%", "degC", "degC", "mm", "%", "1"),
+    min = c(0, -70, 0, -50, -50, 0, 0, 0),
+    max = c(1400, 70, 100, 60, 60, 1000, 100, 25),
+    statistical_class = c(
+      "clear_sky_indexed", "linear", "bounded", "linear", "linear",
+      "intermittent", "bounded", "bounded"
+    ),
+    measurability_class = c(
+      "site_measurable", "derived_measurable", "model_only",
+      "derived_measurable", "derived_measurable", "derived_measurable",
+      "model_only", "model_only"
+    ),
+    circular_period = NA_real_,
+    description = c(
+      "Global horizontal (direct + diffuse) shortwave radiation at the surface.",
+      "Apparent ('feels like') temperature at 2 m.",
+      "Probability of precipitation (>= 0.2 mm) during the hour.",
+      "Daily maximum air temperature at 2 m (local calendar day).",
+      "Daily minimum air temperature at 2 m (local calendar day).",
+      "Daily precipitation total (local calendar day).",
+      "Daily probability of precipitation (>= 0.2 mm) (local calendar day).",
+      "Daily maximum UV index (local calendar day)."
     )
   )
 }

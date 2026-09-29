@@ -1,0 +1,5 @@
+Sorry, your request contains invalid values. Please consult our API Reference ("https://www.longpaddock.qld.gov.au/silo/api-documentation/reference/") for more information on the correct way to request information.
+
+Please note:
+- dates must be in yyyymmdd format e.g. 20201231 for 31st December 2020
+- spaces are never allowed in the request

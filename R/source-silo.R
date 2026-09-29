@@ -22,20 +22,20 @@
 # not the request value codes, or `.silo_reshape_to_long()` silently drops
 # temperature/rainfall (via `intersect()`) because they never match.
 #
-# Only the subset with an obvious canonical counterpart is mapped; SILO
+# Only the subset with an obvious canonical counterpart is mapped (daily
+# max/min temperature are distinct variables -- both at the 9am stamp; RH at
+# tmax/tmin has no dictionary counterpart); SILO
 # variables with no dictionary equivalent (evapotranspiration variants,
 # vapour pressure deficit, etc.) are left unmapped and simply pass through
 # unrecognised if ever requested (`met_variable()` will abort, matching the
 # "unrequested variable" contract).
 .silo_variable_map <- function() {
   c(
-    air_tmax   = "temperature_2m",
-    air_tmin   = "temperature_2m",
+    air_tmax   = "temperature_2m_max",
+    air_tmin   = "temperature_2m_min",
     rainfall   = "precipitation",
-    radiation  = "direct_radiation",
-    mslp       = "pressure_msl",
-    rh_tmax    = "relative_humidity_2m",
-    rh_tmin    = "relative_humidity_2m"
+    radiation  = "shortwave_radiation",   # daily global total -> daily-mean W/m2
+    mslp       = "pressure_msl"
   )
 }
 
@@ -44,10 +44,8 @@
     air_tmax   = "degC",
     air_tmin   = "degC",
     rainfall   = "mm",
-    radiation  = "MJ/m2",
-    mslp       = "hPa",
-    rh_tmax    = "%",
-    rh_tmin    = "%"
+    radiation  = "MJ/m2/d",
+    mslp       = "hPa"
   )
 }
 
@@ -93,31 +91,83 @@
 # vp/vp_deficit and their *_source columns are left as-is. `.silo_variable_map()`
 # below is keyed on the actual returned column names for this reason.
 .weatheroz_get <- function(query, dataset, api_key, ...) {
-  raw <- if (identical(dataset, "patched_point")) {
-    weatherOz::get_patched_point(
-      station_code = query$station_code,
-      start_date = query$start_date,
-      end_date = query$end_date,
-      values = query$values %||% "all",
-      api_key = api_key
-    )
-  } else if (identical(dataset, "data_drill")) {
-    weatherOz::get_data_drill(
-      longitude = query$longitude,
-      latitude = query$latitude,
-      start_date = query$start_date,
-      end_date = query$end_date,
-      values = query$values %||% "all",
-      api_key = api_key
-    )
-  } else {
+  if (!dataset %in% c("patched_point", "data_drill")) {
     abort_meteo(
       "Unknown SILO {.arg dataset}: {.val {dataset}}.",
       class = "unknown_adapter"
     )
   }
+  if (is.na(api_key %||% NA_character_) || !nzchar(api_key)) {
+    abort_meteo(
+      "SILO needs an API key (an email address) in the adapter's {.arg api_key_env} environment variable; it is unset.",
+      class = "secret_unresolved"
+    )
+  }
+  if (identical(dataset, "patched_point") && is.na(query$station_code %||% NA_character_)) {
+    abort_meteo(
+      c("SILO PatchedPoint needs a station; none is resolved for this site.",
+        i = "Set {.code resolved: silo: station:} in the site YAML, or use {.code dataset: data_drill}."),
+      class = "unresolved_station"
+    )
+  }
 
+  args <- if (identical(dataset, "patched_point")) {
+    list(station_code = query$station_code)
+  } else {
+    list(longitude = query$longitude, latitude = query$latitude)
+  }
+  args <- c(args, list(
+    start_date = query$start_date,
+    end_date = query$end_date,
+    values = query$values %||% "all",
+    api_key = api_key
+  ))
+
+  raw <- tryCatch(
+    .weatheroz_call(dataset, args),
+    error = function(cnd) .silo_abort(conditionMessage(cnd), api_key, cnd)
+  )
   .silo_reshape_to_long(raw)
+}
+
+# The call into weatherOz itself (a seam: tests replay recorded responses).
+.weatheroz_call <- function(dataset, args) {
+  fn <- if (identical(dataset, "patched_point")) {
+    weatherOz::get_patched_point
+  } else {
+    weatherOz::get_data_drill
+  }
+  do.call(fn, args)
+}
+
+# weatherOz re-raises SILO's response body verbatim, which may be an HTML
+# page from SILO's firewall ("Request Rejected", transient: the same request
+# succeeds minutes later) or SILO's own "Sorry, your request contains invalid
+# values" text. Turn each into a short classed error, never echoing the key
+# (SILO's `username`), which weatherOz's HTTP errors can include.
+.silo_abort <- function(msg, api_key, parent) {
+  if (nzchar(api_key %||% "")) {
+    msg <- gsub(api_key, "<SILO_API_KEY>", msg, fixed = TRUE)
+    msg <- gsub(utils::URLencode(api_key, reserved = TRUE), "<SILO_API_KEY>", msg, fixed = TRUE)
+  }
+  if (grepl("Request Rejected", msg, fixed = TRUE)) {
+    support <- regmatches(msg, regexpr("(?<=support ID is: )[0-9]+", msg, perl = TRUE))
+    abort_meteo(
+      c("SILO rejected the request (its firewall returned a 'Request Rejected' page).",
+        i = "This is usually transient; the next run normally succeeds.",
+        i = if (length(support)) "SILO support ID: {support}." else NULL),
+      class = "silo_rejected",
+      transient = TRUE,
+      support_id = if (length(support)) support else NA_character_
+    )
+  }
+  first <- .one_line(sub("\n.*", "", gsub("<[^>]+>", " ", msg)))
+  first <- gsub("([{}])", "\1\1", substr(first, 1, 200))
+  if (grepl("^Sorry", msg)) {
+    abort_meteo(c("SILO refused the request as invalid.", x = first),
+                class = "silo_bad_request")
+  }
+  abort_meteo(c("SILO request failed.", x = first), class = "silo_failed")
 }
 
 # weatherOz's get_patched_point()/get_data_drill() return one row per date
@@ -127,19 +177,23 @@
 # shape `.weatheroz_get()` documents/returns (one row per
 # station/date/variable), matching `make_silo_frame()`.
 .silo_reshape_to_long <- function(raw) {
+  raw <- as.data.frame(raw)
+  # DataDrill (gridded) responses carry no station_code/station_name.
+  col <- function(name, missing = NA_character_) {
+    if (name %in% names(raw)) as.vector(raw[[name]]) else rep(missing, nrow(raw))
+  }
   value_cols <- intersect(names(.silo_variable_map()), names(raw))
 
   rows <- lapply(value_cols, function(v) {
-    quality_col <- paste0(v, "_source")
     data.frame(
-      station_code = raw$station_code,
-      station_name = raw$station_name,
-      latitude = raw$latitude,
-      longitude = raw$longitude,
+      station_code = as.character(col("station_code")),
+      station_name = as.character(col("station_name")),
+      latitude = col("latitude", NA_real_),
+      longitude = col("longitude", NA_real_),
       date = as.Date(raw$date),
-      variable_name = v,
-      value = raw[[v]],
-      value_quality = as.character(if (quality_col %in% names(raw)) raw[[quality_col]] else NA),
+      variable_name = rep(v, nrow(raw)),
+      value = as.numeric(raw[[v]]),
+      value_quality = as.character(col(paste0(v, "_source"))),
       stringsAsFactors = FALSE
     )
   })

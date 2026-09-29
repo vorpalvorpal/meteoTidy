@@ -74,6 +74,10 @@
 #' @keywords internal
 #' @noRd
 qc_log_write <- function(store_root, rows, now = .now()) {
+  with_store_lock(store_root, .qc_log_write_impl(store_root, rows, now = now))
+}
+
+.qc_log_write_impl <- function(store_root, rows, now = .now()) {
   if (is.null(rows) || nrow(rows) == 0) {
     return(invisible(store_root))
   }

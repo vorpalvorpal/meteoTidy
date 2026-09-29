@@ -23,11 +23,22 @@ om_fetch <- function(product, body, site = make_test_site(), # nolint: object_us
                      capture = new.env()) {
   adapter <- source_openmeteo(product = product, api_key_env = api_key_env)
   obs_like <- product %in% c("historical")
-  with_mocked_http(body, { # nolint: object_usage_linter.
-    if (obs_like) {
-      fetch(adapter, site, variables, window, now = now)
-    } else {
-      fetch_forecast(adapter, site, variables, window, now = now)
+  # Named models look up their run time in the model's metadata (a
+  # separate request, answered here without touching `capture`).
+  meta <- list(last_run_initialisation_time = as.numeric(now) - as.numeric(now) %% 21600 - 21600)
+  fake <- function(url, headers = list(), query = list(), retry = 3, now = NULL) {
+    if (grepl("/static/meta[.]json$", url)) {
+      return(meta)
     }
-  }, capture = capture)
+    capture$url <- url
+    capture$headers <- headers
+    capture$query <- query
+    body
+  }
+  testthat::local_mocked_bindings(.http_get = fake)
+  if (obs_like) {
+    fetch(adapter, site, variables, window, now = now)
+  } else {
+    fetch_forecast(adapter, site, variables, window, now = now)
+  }
 }

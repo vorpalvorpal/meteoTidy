@@ -156,7 +156,8 @@ build_history_daily <- function(store_root, site, window, as_of = NULL) {
 
   silo <- raw[raw$source == "silo", , drop = FALSE]
   aws <- raw[raw$source != "silo", , drop = FALSE]
-  aws_clean <- aws[.is_qc_clean(aws$qc_flag), , drop = FALSE]
+  aws_clean <- .one_source_per_value(aws[.is_qc_clean(aws$qc_flag), , drop = FALSE],
+                                     names(site@sources))
 
   silo <- .apply_silo_calibration(store_root, site, silo)
   aws_clean$tier <- "raw"
@@ -191,4 +192,18 @@ build_history_daily <- function(store_root, site, window, as_of = NULL) {
   out$tier <- enforced$tier
   attr(out, "n_violations") <- n_violations
   out
+}
+
+# Several AWS-like sources (e.g. an on-site eagle.io gauge and BOM's nearby
+# station) can report the same variable at the same instant. Keep one row
+# per (site_id, datetime_utc, variable): sources take precedence in the
+# order the site's YAML lists them (`order`), then alphabetically.
+.one_source_per_value <- function(obs, order) {
+  if (nrow(obs) == 0) {
+    return(obs)
+  }
+  rank <- match(obs$source, order)
+  rank[is.na(rank)] <- length(order) + 1L
+  obs <- obs[order(rank, obs$source), , drop = FALSE]
+  obs[!duplicated(obs[c("site_id", "datetime_utc", "variable")]), , drop = FALSE]
 }

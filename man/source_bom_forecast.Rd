@@ -2,53 +2,70 @@
 % Please edit documentation in R/source-bom-forecast.R
 \name{source_bom_forecast}
 \alias{source_bom_forecast}
-\title{A BOM daily précis + (opt-in) hourly forecast adapter}
+\title{A BOM daily précis + hourly forecast adapter}
 \usage{
 source_bom_forecast(
-  ladder = list(.bom_precis_rung()),
+  ladder = NULL,
   allow_web_api = FALSE,
   store_root,
-  source_id = "bom_forecast"
+  source_id = "bom_forecast",
+  products = c("daily", "hourly")
 )
 }
 \arguments{
-\item{ladder}{A list of transport rungs (see \code{ladder_fetch()}). Defaults
-to a précis-serving \code{ftp_feeds} rung.}
+\item{ladder}{A list of transport rungs (see \code{ladder_fetch()}) for the
+daily product. Defaults to the précis feed, then (when \code{allow_web_api})
+the web API.}
 
-\item{allow_web_api}{Logical, default \code{FALSE}. When \code{TRUE},
-\code{\link[=resolve_station]{resolve_station()}} may call the unofficial web API to search for a
-geohash.}
+\item{allow_web_api}{Logical, default \code{FALSE}. Enables the web API for the
+daily fallback, the hourly forecast, and geohash search in
+\code{\link[=resolve_station]{resolve_station()}}.}
 
 \item{store_root}{Single string, the store root used for breaker-state
 persistence.}
 
 \item{source_id}{Single string stamped into the \code{source} column. Default
 \code{"bom_forecast"}.}
+
+\item{products}{Which products to fetch: any of \code{"daily"}, \code{"hourly"}.}
 }
 \value{
 A \code{source_bom_forecast} (\code{met_adapter} subclass) S7 object.
 }
 \description{
-\code{source_bom_forecast()} builds a \code{\link[=met_adapter]{met_adapter()}} that fetches BOM's
-edited 7-day précis forecast (daily résolution; the regulator-cited
-product, SCOPING §5.1) via the official anonymous-FTP/HTTP-mirror product
-feeds, and returns both the numeric forecast rows
-(\code{\link[=fetch_forecast]{fetch_forecast()}}) and the non-numeric companion table
-(\code{\link[=fetch_forecast_aux]{fetch_forecast_aux()}}: précis text, fire-danger/UV categories).
+\code{source_bom_forecast()} builds a \code{\link[=met_adapter]{met_adapter()}} that archives BOM's
+edited forecast for the site's location:
 }
 \details{
-Hourly forecasts (via the unofficial web API / new gateway) are opt-in
-(\code{allow_web_api = TRUE}) and documented as at-your-own-risk (SCOPING
-§5.1): they are the only free channel for sub-daily BOM forecasts, but
-rely on undocumented endpoints. The \code{store_root} is used only to persist
-the transport circuit-breaker state across runs (see
-\code{breaker_read()}/\code{breaker_write()}).
+\itemize{
+\item the \strong{daily} 7-day forecast -- min/max temperature
+(\code{temperature_2m_min}/\code{temperature_2m_max}), chance of rain
+(\code{precipitation_probability_max}), rain amounts at BOM's 25/50/75 \%
+chances (\code{precipitation_sum} rows with \code{stat = "p75"}/\code{"p50"}/\code{"p25"}:
+"X \% chance of at least A mm" is the \code{100 - X} percentile), and maximum
+UV index (\code{uv_index_max}); text elements (précis, extended forecast,
+fire danger, UV category) are returned by \code{\link[=fetch_forecast_aux]{fetch_forecast_aux()}} and
+archived to \code{forecast_aux}. Rows have \code{model = "daily"} and
+\code{valid_time} = the start of the local day.
+\item the \strong{hourly} forecast (~3 days; web API only) -- temperature,
+apparent temperature, dew point, humidity, wind speed/direction/gusts,
+UV index, chance of rain (\code{precipitation_probability}) and rain amounts
+at BOM's 10/25/50 \% chances (\code{precipitation} rows with \code{stat = "p90"}/
+\code{"p75"}/\code{"p50"}). Rows have \code{model = "hourly"}.
+}
 
-The edited BOM précis product carries no model name; every forecast row
-this adapter returns has \code{model = NA_character_} (Plan 01).
+\code{issue_time} is BOM's own issue time for the product.
+
+The daily forecast comes from the official précis product feed when the
+site has a BOM area code (\verb{resolved: bom: aac:} in site YAML, e.g.
+\code{NSW_PT072} for Katoomba); otherwise, or if that feed fails, from the
+unofficial \code{api.weather.bom.gov.au} web API. The web API is keyed by the
+site's 6-character geohash (\verb{resolved: bom: geohash:}), is \strong{opt-in}
+(\code{allow_web_api = TRUE}) and at-your-own-risk (SCOPING section 5.1), and
+is the only channel for the hourly forecast.
 }
 \examples{
-adapter <- source_bom_forecast(store_root = tempfile())
+adapter <- source_bom_forecast(store_root = tempfile(), allow_web_api = TRUE)
 }
 \seealso{
 Other adapter: 
@@ -63,6 +80,7 @@ Other adapter:
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
 \code{\link{source_bom_obs}()},
+\code{\link{source_eagleio}()},
 \code{\link{source_ecmwf}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},

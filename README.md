@@ -76,6 +76,32 @@ Every stored value carries provenance `(source, method, qc_flag)`; forecasts
 are archived on every sync, deduplicated, because BOM keeps no public archive
 of its edited forecast — anything not fetched is lost.
 
+## Production use
+
+The production setup runs `met_sync_live()` hourly at 20 minutes past the
+hour and `met_sync_daily()` daily at 10:30 Australia/Sydney. The site YAML
+for the Katoomba and Blaxland facilities ships in
+`system.file("acceptance", "sites.yaml", package = "meteoTidy")`.
+
+```r
+sites <- read_sites_yaml("sites.yaml")   # SILO_API_KEY, EAGLE_API_KEY in the environment
+live <- list(store_root = "D:/meteo/store",
+             obs_sources = c("bom_obs", "eagleio"),
+             forecast_sources = c("openmeteo", "om_ens", "bom_forecast"))
+met_sync_live(sites, config = live, fail_on = "all")   # non-zero exit if nothing was acquired
+```
+
+- Every source runs isolated. A dead feed shows up as that source's
+  `"failed"` or `"stale"` row in the result's `sources` column and in a
+  one-line-per-site log on stderr.
+- `fail_on = "any"` or `"all"` turns failure into a non-zero `Rscript` exit
+  status.
+- Runs that overlap on the same store serialise on a file lock.
+
+`vignette("scheduling")` covers the full config, the schedule and failure
+detection. `inst/acceptance/live_sync.R` checks all of it against the live
+APIs.
+
 **Note:** `history_daily` (SILO base, AWS overlay) is *not* a homogenized
 climate record — the AWS installation date introduces a step change. It is
 fit for operational bounds and calibration priors, unfit for trend analysis.

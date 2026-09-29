@@ -26,6 +26,7 @@ Imports:
     crch,
     digest,
     dplyr,
+    filelock,
     httr2,
     imputeTS,
     jsonlite,
@@ -42,6 +43,7 @@ Imports:
     xml2,
     yaml
 Suggests:
+    callr,
     curl,
     DBI,
     dbplyr,
@@ -50,6 +52,7 @@ Suggests:
     keyring,
     knitr,
     lintr,
+    pkgload,
     rmarkdown,
     testthat (>= 3.0.0)
 SystemRequirements: eccodes (https://confluence.ecmwf.int/display/ECC --
@@ -126,6 +129,7 @@ Collate:
     'site-yaml.R'
     'source-bom-forecast.R'
     'source-bom-obs.R'
+    'source-eagleio.R'
     'source-openmeteo.R'
     'source-ecmwf.R'
     'source-rest.R'
@@ -133,7 +137,9 @@ Collate:
     'station-resolve.R'
     'store-calib.R'
     'store-connect.R'
+    'store-lock.R'
     'store-obs-transport.R'
+    'sync-status.R'
     'tier-emos.R'
     'tier-mean-bias.R'
     'tier-qmap.R'

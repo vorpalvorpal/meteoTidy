@@ -38,8 +38,15 @@
 #'   `"seasonal"`. Selects the endpoint and the response shape.
 #' @param models Optional character vector of underlying NWP model ids (see
 #'   the (non-exhaustive, extensible) roster in `R/openmeteo-endpoints.R`).
-#'   `NULL` (default) lets Open-Meteo pick its default model(s) for the
-#'   product.
+#'   Each model is requested separately and archived under its own `model`
+#'   label. `NULL` (default) uses `"best_match"` for `"forecast"` and
+#'   `"ecmwf_ifs025"` (ECMWF IFS 0.25 deg) for `"ensemble"` -- the Ensemble
+#'   API rejects requests without a model.
+#' @param provides Optional character vector narrowing the variables this
+#'   adapter requests (e.g. from site YAML). Defaults to every hourly
+#'   dictionary variable Open-Meteo serves (a smaller set for `"ensemble"`).
+#' @param forecast_days Optional horizon in days for `"forecast"`/
+#'   `"ensemble"`; defaults to the longest the product serves (16 / 15).
 #' @param api_key_env Optional single string: the *name* of an environment
 #'   variable holding a commercial Open-Meteo API key. See Licensing above.
 #' @param source_id Single string stamped into the `source` column of every
@@ -59,7 +66,8 @@ source_openmeteo <- S7::new_class(
   properties = list(
     product = S7::class_character,
     models = S7::class_character,
-    api_key_env = S7::class_character
+    api_key_env = S7::class_character,
+    forecast_days = S7::class_integer
   ),
   constructor = function(
     product = c(
@@ -67,18 +75,27 @@ source_openmeteo <- S7::new_class(
       "previous_runs", "single_runs", "seasonal"
     ),
     models = NULL, api_key_env = NULL,
-    source_id = "openmeteo", ...
+    source_id = "openmeteo", provides = NULL, forecast_days = NULL, ...
   ) {
     product <- rlang::arg_match(product)
+    default_provides <- if (product == "ensemble") {
+      .openmeteo_ensemble_default_variables()
+    } else if (product == "seasonal") {
+      met_variables()$variable
+    } else {
+      .openmeteo_hourly_variables()
+    }
+    provides <- .narrow_provides(default_provides, provides, source_id)
     S7::new_object(
       met_adapter(
         source_id = source_id,
-        provides = met_variables()$variable,
+        provides = provides,
         cadence = if (product == "seasonal") "daily" else "hourly"
       ),
       product = product,
       models = models %||% NA_character_,
-      api_key_env = api_key_env %||% NA_character_
+      api_key_env = api_key_env %||% NA_character_,
+      forecast_days = as.integer(forecast_days %||% NA_integer_)
     )
   }
 )
@@ -150,26 +167,55 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   variables <- intersect(variables, adapter@provides)
   product <- adapter@product
   models <- .openmeteo_models(adapter)
-  model_label <- if (!is.null(models)) models[[1]] else adapter@product
+  forecast_days <- if (is.na(adapter@forecast_days)) NULL else adapter@forecast_days
 
+  # One request per model: each model has its own run (init) time, and a
+  # multi-model request would suffix every column with the model id.
+  if (product %in% .openmeteo_horizon_products()) {
+    models <- models %||% .openmeteo_default_models(product)
+  }
+  model_list <- if (is.null(models)) list(NULL) else as.list(models)
+
+  pieces <- lapply(model_list, function(model) {
+    .openmeteo_fetch_one_model(adapter, site, variables, issue_window, now,
+                               product, model, key, forecast_days)
+  })
+  out <- vctrs::vec_rbind(!!!pieces)
+  if (is.null(out)) {
+    return(new_forecast(.empty_forecast()))
+  }
+  out[out$variable %in% variables, , drop = FALSE]
+}
+
+.openmeteo_fetch_one_model <- function(adapter, site, variables, issue_window, now,
+                                       product, model, key, forecast_days) {
+  model_label <- model %||% adapter@product
   url <- .openmeteo_build_url(
     product, site, variables, issue_window,
-    api_key = key, models = models
+    api_key = key,
+    models = if (identical(model, "best_match")) NULL else model,
+    forecast_days = forecast_days
   )
+  issue_time <- if (product %in% .openmeteo_horizon_products()) {
+    .openmeteo_issue_time(product, model, key, now)
+  } else {
+    now
+  }
   body <- .http_get(url, query = list(), now = now)
 
   out <- switch(product,
     forecast             = .openmeteo_parse_forecast(
-      body, site, variables, adapter@source_id, model_label, now
+      body, site, variables, adapter@source_id, model_label, issue_time
     ),
     ensemble              = .openmeteo_parse_ensemble(
-      body, site, variables, adapter@source_id, model_label, now
+      body, site, variables, adapter@source_id, model_label, issue_time
     ),
     previous_runs         = .openmeteo_parse_previous_runs(
       body, site, variables, adapter@source_id, model_label, now
     ),
     single_runs           = .openmeteo_parse_forecast(
-      body, site, variables, adapter@source_id, model_label, now
+      body, site, variables, adapter@source_id, model_label, now,
+      horizon_only = FALSE
     ),
     historical_forecast   = .openmeteo_parse_historical_forecast(
       body, site, variables, adapter@source_id, model_label, now
@@ -182,8 +228,7 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
       class = "no_forecast_support"
     )
   )
-
-  out[out$variable %in% variables, , drop = FALSE]
+  out
 }
 
 #' The attribution/credit string for an adapter's data source

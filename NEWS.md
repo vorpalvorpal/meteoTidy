@@ -1,4 +1,90 @@
-# meteoTidy (development version)
+# meteoTidy 0.0.0.9000 (development version)
+
+Production archiving for hourly `met_sync_live()` and daily `met_sync_daily()` runs:
+
+## Breaking changes
+
+- **Sync results gain a `sources` column.** `met_sync_live()` and
+  `met_sync_daily()` return `site_id`, `status`, `message` and `sources`, a
+  list-column of per-source tibbles (`kind`, `source`, `status` =
+  `"ok"`/`"failed"`/`"stale"`, `n`, `message`). Site `status` is now `"ok"`,
+  `"degraded"` (some source or step failed), `"failed"` (every source failed)
+  or `"error"`.
+- **BOM forecasts use new variables and model labels.** Rows previously had
+  `model = NA`. They are now `model = "daily"` (précis / web-API daily:
+  `temperature_2m_max`, `temperature_2m_min`, `precipitation` quantiles,
+  `precipitation_probability_max`, `uv_index_max`) or `model = "hourly"`
+  (web-API hourly: temperature, humidity, wind, gusts, rain quantiles and
+  probability). "X % chance of at least A mm" is stored as `stat = p(100-X)`.
+  Text fields (précis, fire danger, UV category, icon) go to `forecast_aux`.
+- **SILO observation variables changed.** `air_tmax`/`air_tmin` are now
+  `temperature_2m_max`/`temperature_2m_min`; before, both mapped to
+  `temperature_2m` at the same instant, which gave duplicate keys. SILO
+  radiation (daily MJ/m2) is now `shortwave_radiation` as a daily mean in
+  W/m2 (was `direct_radiation`). RH at tmax/tmin is no longer ingested.
+- **SILO quality codes follow SILO's published table.** 75 is the
+  long-term-average fallback (`model_fill`, `suspect`); 35 is anomaly
+  interpolation (`imputed`, `ok`). These were swapped. Code 42 (BoM satellite
+  radiation estimate, `derived`) is new.
+- **Open-Meteo defaults.** The forecast product requests a fixed hourly
+  variable set (the meteoHazard §3.1 set plus dewpoint, shortwave radiation,
+  precipitation probability, apparent temperature, CAPE and UV) over a
+  16-day horizon. The ensemble defaults to `models = "ecmwf_ifs025"` over 15
+  days. `provides:` in site YAML narrows either.
+- **`met_wide()` serves one source and model.** It no longer averages every
+  archived source together. New `source`/`model` arguments; the default is
+  the only source, else `"openmeteo"`, and the only model, else
+  `"best_match"`, then `"hourly"`. `shortwave_radiation` is part of the wide
+  contract (derived as direct + diffuse when not archived), and gusts are
+  never below mean wind.
+- `lead_time` is stored in whole seconds (it was fractional, which made the
+  archive unreadable).
+
+## New features
+
+- `source_eagleio()`: eagle.io historic-data adapter (`adapter: eagleio` in
+  site YAML, `nodes:` maps variables to node IDs, key from `EAGLE_API_KEY`).
+  A station that has stopped reporting is `"stale"` without failing the site,
+  including when the window still holds its last readings
+  (`stale_after_hours:`, default 6). Impossible readings are stored flagged
+  `"fail"` rather than failing the fetch.
+- `fail_on = c("none", "any", "all")` on the sync verbs signals
+  `meteoTidy_error_sync_failed` after all work is done, so `Rscript` exits
+  non-zero for a scheduler. Each run writes one line per site to stderr
+  (silence with `options(meteoTidy.sync_log = FALSE)`).
+- Store writes hold an exclusive lock on `store_root` (`filelock`), so
+  overlapping runs serialise instead of duplicating rows.
+  `config$lock_timeout` sets the wait (default 600 s). Reads drop duplicate
+  keys, so stores damaged by the old race stay readable.
+- BOM forecast: the official précis product by area code
+  (`resolved: bom: aac:`) plus the web-API daily and hourly forecasts
+  (`resolved: bom: geohash:`). BOM observations come from the site's own
+  station (`resolved: bom: wmo:`).
+- `inst/acceptance/live_sync.R`: live acceptance checks for production.
+
+## Fixes
+
+- Open-Meteo `issue_time` is the model run time from the model's metadata,
+  not the wall clock. Re-syncing the same run adds nothing. If the run time
+  cannot be read, that source fails for this sync
+  (`openmeteo_run_unknown`) rather than guessing; `best_match`, which
+  blends models, keeps the 6-hourly cycle floor.
+- Open-Meteo ensemble: the control run is member 0; variables with unknown
+  units are skipped with a warning; JSON nulls no longer shift values against
+  times; HTTP 429 honours `Retry-After` with exponential backoff.
+- Each source runs isolated: one dead source no longer skips the site's
+  other sources, QC, fill or history.
+- SILO errors are classed and readable: `silo_rejected` (SILO's firewall
+  "Request Rejected" page; transient), `silo_bad_request`, `silo_failed` (the
+  key is redacted). DataDrill responses (no station columns) now work.
+- A first `met_sync_daily()` on a fresh store fetches the refetch window
+  instead of an open-ended window that no adapter can serve.
+- `history_daily` with several observation sources for a site (e.g. eagle.io
+  and BOM) keeps one value per variable and instant, preferring sources in
+  the order the site YAML lists them. It used to fail on duplicate columns.
+
+
+## Earlier development
 
 - `source_ecmwf()` now reads GRIB2 **only through eccodes** (terra/GDAL dropped).
   eccodes reads ECMWF-native `shortName`/`step`/`perturbationNumber`/`units` and

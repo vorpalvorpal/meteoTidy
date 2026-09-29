@@ -71,11 +71,23 @@ new_forecast <- function(df) {
   # convention (Plan 05, SCOPING §7.2): its issue_time is not resolvable, so
   # there is nothing to check consistency against. Only rows that DO claim a
   # lead_time are held to the valid_time - issue_time identity.
+  #
+  # lead_time is normalised to WHOLE SECONDS here, on both the write and the
+  # read path: Parquet stores a difftime as duration[s], which truncates any
+  # sub-second fraction, so a fractional lead written from a wall-clock
+  # issue_time (the system clock has microseconds) would never read back equal.
+  # The identity check therefore tolerates < 1 s of drift -- the resolution
+  # the store can actually represent.
+  df$lead_time <- as.difftime(round(as.numeric(df$lead_time, units = "secs")),
+                              units = "secs")
+  units(df$lead_time) <- "hours"
   has_lead <- !is.na(df$lead_time)
   if (any(has_lead)) {
-    expected_lead <- as.numeric(difftime(df$valid_time, df$issue_time, units = "hours"))
-    actual_lead <- as.numeric(df$lead_time, units = "hours")
-    mismatch <- has_lead & abs(expected_lead - actual_lead) > 1e-6
+    expected_lead <- as.numeric(difftime(df$valid_time, df$issue_time, units = "secs"))
+    actual_lead <- as.numeric(df$lead_time, units = "secs")
+    mismatch <- has_lead & abs(expected_lead - actual_lead) >= 1
+    expected_lead <- expected_lead / 3600
+    actual_lead <- actual_lead / 3600
     if (any(mismatch)) {
       idx <- which(mismatch)[1] # nolint: object_usage_linter. used via cli glue-interpolation below
       abort_meteo(
@@ -154,4 +166,16 @@ new_forecast_aux <- function(df) {
   }
 
   df[c("site_id", "source", "issue_time", "valid_time", "field", "value_text")]
+}
+
+# A zero-row canonical forecast tibble.
+.empty_forecast <- function() {
+  tibble::tibble(
+    site_id = character(0), source = character(0), model = character(0),
+    issue_time = as.POSIXct(character(0), tz = "UTC"),
+    valid_time = as.POSIXct(character(0), tz = "UTC"),
+    lead_time = as.difftime(numeric(0), units = "hours"),
+    member = integer(0), stat = character(0),
+    variable = character(0), value = double(0)
+  )
 }

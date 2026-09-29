@@ -48,6 +48,10 @@ breaker_read <- function(store_root) {
 #' @keywords internal
 #' @noRd
 breaker_write <- function(store_root, breaker) {
+  with_store_lock(store_root, .breaker_write_impl(store_root, breaker))
+}
+
+.breaker_write_impl <- function(store_root, breaker) {
   path <- .breaker_path(store_root)
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   tmp <- paste0(path, ".tmp-", Sys.getpid())

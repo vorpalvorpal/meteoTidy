@@ -4,6 +4,7 @@ describe("72-h obs JSON → canonical obs", {
   it("parses the rolling 72-h station JSON with transport == ftp_feeds", {
     site <- make_test_site()
     site <- site_set_resolved(site, c("bom", "product"), "IDN60901")
+    site <- site_set_resolved(site, c("bom", "wmo"), "94743")
     adapter <- source_bom_obs(store_root = local_store())
     win <- list(from = as.POSIXct("2025-12-31", tz = "UTC"),
                 to = as.POSIXct("2026-01-02", tz = "UTC"))

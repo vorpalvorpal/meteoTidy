@@ -54,7 +54,8 @@ NULL
 #' @param now Injectable current time; see `.now()`.
 #' @param missed Logical; when `TRUE`, report gap semantics for `sources`
 #'   instead of fetching/archiving.
-#' @return A summary tibble with (at least) `source` and `note` columns.
+#' @return A per-source status tibble: `kind`, `source`, `status` (`"ok"`,
+#'   `"failed"`, `"stale"`), `n` (rows fetched), `message`, and `note`.
 #' @keywords internal
 #' @noRd
 archive_forecasts <- function(store_root, site, sources, now = .now(), missed = FALSE) {
@@ -67,13 +68,23 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
 
   window <- .archive_forecast_window(now)
 
+  # Each source is isolated (problem 7 of the production review): one dead
+  # feed is recorded as that source's failure and the others still archive.
   rows <- lapply(sources, function(source) {
-    fc <- .acquire_forecast(source, site, window, now = now)
-    if (nrow(fc) > 0) {
-      store_write_forecast(store_root, fc, now = now)
-    }
-    tibble::tibble(source = source, note = "archived", n = nrow(fc))
+    .run_source("forecast", source, {
+      fc <- .acquire_forecast(source, site, window, now = now)
+      aux <- attr(fc, "aux")
+      if (nrow(fc) > 0) {
+        store_write_forecast(store_root, fc, now = now)
+      }
+      if (!is.null(aux) && nrow(aux) > 0) {
+        store_write_forecast_aux(store_root, aux, now = now)
+      }
+      nrow(fc)
+    })
   })
 
-  vctrs::vec_rbind(!!!rows)
+  out <- vctrs::vec_rbind(.empty_source_status(), !!!rows)
+  out$note <- ifelse(out$status == "ok", "archived", out$status)
+  out
 }

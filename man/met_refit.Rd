@@ -13,7 +13,9 @@ met_refit(sites, now = .now(), config)
 
 \item{config}{A pipeline configuration list (see \verb{plans/14-*}/
 \code{tests/testthat/helper-pipeline.R}'s \code{pipeline_config()}): at least
-\code{store_root}, \code{obs_sources}, \code{forecast_sources}.}
+\code{store_root}, \code{obs_sources}, \code{forecast_sources}.
+Optional \code{lock_timeout} (seconds, default 600): how long to wait for
+another process's write lock on \code{store_root}.}
 }
 \value{
 A tibble with columns \code{site_id}, \code{status}, \code{message}.

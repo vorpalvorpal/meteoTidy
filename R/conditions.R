@@ -191,7 +191,23 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_warning_met_table_downgraded",
       "meteoTidy_error_schema_violation",
       "meteoTidy_warning_mixed_tier",
-      "meteoTidy_error_multi_site_wide"
+      "meteoTidy_error_multi_site_wide",
+      # Production-review fixes (2026-09)
+      "meteoTidy_error_store_locked",
+      "meteoTidy_error_bad_provides",
+      "meteoTidy_warning_openmeteo_unknown_unit",
+      "meteoTidy_error_bom_bad_response",
+      "meteoTidy_warning_bom_partial",
+      "meteoTidy_error_bom_rung_unconfigured",
+      "meteoTidy_error_source_stale",
+      "meteoTidy_warning_eagleio_node_empty",
+      "meteoTidy_error_sync_failed",
+      "meteoTidy_error_wide_source_unavailable",
+      "meteoTidy_error_silo_rejected",
+      "meteoTidy_error_silo_bad_request",
+      "meteoTidy_error_silo_failed",
+      "meteoTidy_error_openmeteo_run_unknown",
+      "meteoTidy_warning_source_stale"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -263,7 +279,22 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A dplyr operation on a met_table invalidated its provenance (dropped a value column, or bind_rows mixed incompatible provenance); downgraded to a plain tibble.", # nolint: line_length_linter.
       "met_ingest() received a plain tibble that does not satisfy the section 3.1 wide schema (no time column).", # nolint: line_length_linter.
       "met_assert_single_tier() found a derived index mixing more than one correction tier.", # nolint: line_length_linter.
-      "met_wide() was given a multi-site collection; the wide table is a per-site product." # nolint: line_length_linter.
+      "met_wide() was given a multi-site collection; the wide table is a per-site product.", # nolint: line_length_linter.
+      "Timed out waiting for another process's write lock on the store_root.",
+      "A configured `provides` names a variable the adapter cannot serve.",
+      "Open-Meteo reported an undefined unit for a variable (the model does not provide it); the variable was skipped.",
+      "A BOM response lacks a field the parser requires (e.g. metadata.issue_time).",
+      "One BOM forecast product (daily or hourly) failed; the other was still archived.",
+      "A BOM transport rung is not configured for this site (e.g. no area code); skipped without a breaker strike.",
+      "A source returned no data for the window: the station has stopped reporting.",
+      "Some eagle.io nodes returned no records; the others were kept.",
+      "met_sync_live()/met_sync_daily() finished with failures and fail_on asked for an error (cnd$status holds the status table).",
+      "met_wide() was asked for a source/model that is not archived for the window, or must be told which of several to serve.",
+      "SILO (its firewall) returned an HTML \"Request Rejected\" page; transient (cnd$transient, cnd$support_id).",
+      "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
+      "A SILO request failed for another reason (message has the API key redacted).",
+      "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled.",
+      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale)."
     ),
     stringsAsFactors = FALSE
   )

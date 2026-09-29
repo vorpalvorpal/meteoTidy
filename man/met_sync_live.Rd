@@ -4,7 +4,7 @@
 \alias{met_sync_live}
 \title{Sync the live (near-real-time) observation and forecast head}
 \usage{
-met_sync_live(sites, now = .now(), config)
+met_sync_live(sites, now = .now(), config, fail_on = c("none", "any", "all"))
 }
 \arguments{
 \item{sites}{A \code{met_site} or \code{met_sites} collection.}
@@ -13,11 +13,25 @@ met_sync_live(sites, now = .now(), config)
 
 \item{config}{A pipeline configuration list (see \verb{plans/14-*}/
 \code{tests/testthat/helper-pipeline.R}'s \code{pipeline_config()}): at least
-\code{store_root}, \code{obs_sources}, \code{forecast_sources}.}
+\code{store_root}, \code{obs_sources}, \code{forecast_sources}.
+Optional \code{lock_timeout} (seconds, default 600): how long to wait for
+another process's write lock on \code{store_root}.}
+
+\item{fail_on}{When to signal an error (class
+\code{meteoTidy_error_sync_failed}) after all the work is done, so a
+scheduler running \code{Rscript} sees a non-zero exit status: \code{"none"}
+(default; never), \code{"any"} (any site not fully \code{"ok"} -- any source
+failed), \code{"all"} (every site failed outright). The condition carries the
+status table as \code{cnd$status}.}
 }
 \value{
-A tibble with columns \code{site_id}, \code{status} (\code{"ok"} or
-\code{"degraded"}/\code{"error"}), \code{message}.
+A tibble with one row per site: \code{site_id}; \code{status} -- \code{"ok"}
+(every source succeeded), \code{"degraded"} (some source or step failed),
+\code{"failed"} (every source failed) or \code{"error"} (an unexpected error);
+\code{message} (what failed); and \code{sources}, a list-column of per-source
+tibbles (\code{kind}, \code{source}, \code{status} = \code{"ok"}/\code{"failed"}/\code{"stale"}, \code{n}
+rows fetched, \code{message}). One line per site is also written to stderr
+via \code{\link[=message]{message()}} (silence with \code{options(meteoTidy.sync_log = FALSE)}).
 }
 \description{
 Hourly, best-effort (SCOPING section 5.1). Per site: fetches each
@@ -41,6 +55,16 @@ Multi-site, incremental (the live watermark), and idempotent: re-running
 with the same inputs and clock does not duplicate observation rows or
 double-advance the watermark (Plan 03's supersede/dedup policies).
 }
+\section{Isolation}{
+
+Every source -- each obs source and each forecast source -- runs
+isolated: a dead source is recorded in \code{sources} and the site's other
+sources, QC/fill and archiving still run. The whole per-site sync holds
+an exclusive lock on \code{store_root}, so overlapping runs (e.g. a slow
+hourly sync still going when the next starts) serialise instead of
+writing duplicate rows.
+}
+
 \examples{
 \dontrun{
 met_sync_live(site, config = my_pipeline_config)

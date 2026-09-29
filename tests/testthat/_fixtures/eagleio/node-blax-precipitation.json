@@ -1,0 +1,8 @@
+{
+  "_class": "io.eagle.models.node.point.NumberPoint",
+  "_id": "647e9492dac9bf46aa1ffd0f",
+  "currentTime": "2026-09-24T03:00:00.000Z",
+  "name": "WEATHER-10min - Rain-Tot",
+  "oldestTime": "2015-10-01T05:50:00.000Z",
+  "units": "mm"
+}

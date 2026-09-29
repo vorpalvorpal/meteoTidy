@@ -1,0 +1,80 @@
+# Production site YAML for the two Blue Mountains waste-management
+# facilities. No secrets: API keys are named by environment variable only
+# (SILO_API_KEY, EAGLE_API_KEY). `@STORE_ROOT@` is replaced by the
+# acceptance script with a scratch store; in production set it to the
+# report service's store directory.
+#
+# Source order matters for history products: where two observation sources
+# report the same variable at the same instant, the one listed first wins.
+# The on-site eagle.io gauge therefore comes before BOM's nearby station.
+sites:
+  - site_id: kat
+    latitude: -33.70
+    longitude: 150.32
+    elevation: 1000
+    timezone: Australia/Sydney
+    store_root: "@STORE_ROOT@"
+    resolved:
+      bom:
+        geohash: r64bhq        # BOM web-API location (forecast + obs)
+        aac: NSW_PT072         # Katoomba, précis product IDN11060
+        wmo: "94743"           # Mount Boyce AWS, obs product IDN60901
+    sources:
+      eagleio:
+        adapter: eagleio
+        api_key_env: EAGLE_API_KEY
+        nodes:
+          precipitation: 64642e52fbaed638fdb04110
+          temperature_2m: 64642e52fbaed638fdb04100
+      bom_obs:
+        adapter: bom_obs
+        allow_web_api: true
+      silo:
+        adapter: silo
+        dataset: data_drill
+        api_key_env: SILO_API_KEY
+      openmeteo:
+        adapter: openmeteo
+        product: forecast      # best_match, 16-day horizon
+      om_ens:
+        adapter: openmeteo
+        product: ensemble
+        models: [ecmwf_ifs025] # 51 members, 15-day horizon
+      bom_forecast:
+        adapter: bom_forecast
+        allow_web_api: true    # daily (précis rung first) + hourly
+  - site_id: blax
+    latitude: -33.73
+    longitude: 150.61
+    elevation: 250
+    timezone: Australia/Sydney
+    store_root: "@STORE_ROOT@"
+    resolved:
+      bom:
+        geohash: r65050
+        aac: NSW_PT129         # Springwood (nearest précis town)
+        wmo: "94763"           # Penrith Lakes AWS
+    sources:
+      eagleio:
+        adapter: eagleio
+        api_key_env: EAGLE_API_KEY
+        nodes:
+          precipitation: 647e9492dac9bf46aa1ffd0f
+          temperature_2m: 647e9492dac9bf46aa1ffd02
+      bom_obs:
+        adapter: bom_obs
+        allow_web_api: true
+      silo:
+        adapter: silo
+        dataset: data_drill
+        api_key_env: SILO_API_KEY
+      openmeteo:
+        adapter: openmeteo
+        product: forecast
+      om_ens:
+        adapter: openmeteo
+        product: ensemble
+        models: [ecmwf_ifs025]
+      bom_forecast:
+        adapter: bom_forecast
+        allow_web_api: true

@@ -66,7 +66,7 @@
         qc_flag = character(0)
       ))
     }
-    raw_values <- as.double(unlist(raw, use.names = FALSE))
+    raw_values <- .openmeteo_values(raw)
     source_unit <- body$hourly_units[[v]] %||% canonical_unit(v)
     canonical <- to_canonical(raw_values, from = source_unit, variable = v)
     tibble::tibble(
@@ -155,7 +155,21 @@
 # it's a suffixed column whose base unit is reported under the base name).
 .openmeteo_to_canonical_values <- function(raw, variable, units_block) {
   source_unit <- units_block[[variable]] %||% canonical_unit(variable)
-  canonical <- to_canonical(as.double(unlist(raw, use.names = FALSE)),
+  # Open-Meteo reports unit "undefined" (with all-null values) for a variable
+  # the chosen model does not produce -- e.g. boundary_layer_height from
+  # ECMWF IFS. Converting that aborted the whole fetch (problem 6 of the
+  # production review); skip the variable with a warning instead.
+  if (!.openmeteo_unit_known(source_unit)) {
+    warn_meteo(
+      c(
+        "Open-Meteo returned unit {.val {source_unit}} for {.field {variable}}; skipping it.",
+        "i" = "The selected model does not provide it. Narrow {.arg provides} to silence this."
+      ),
+      class = "openmeteo_unknown_unit"
+    )
+    return(NULL)
+  }
+  canonical <- to_canonical(.openmeteo_values(raw),
                             from = source_unit, variable = variable)
   as.double(units::drop_units(canonical))
 }
@@ -165,7 +179,8 @@
 # issue_time/lead_time are set (the caller passes lead_time = NA for
 # historical_forecast).
 .openmeteo_parse_plain_forecast <- function(body, site, variables, source_id, model,
-                                            issue_time, now, lead_is_na) {
+                                            issue_time, now, lead_is_na,
+                                            horizon_only = FALSE) {
   block <- .openmeteo_get_block(body, "hourly")
   units_block <- body$hourly_units %||% list()
   time_utc <- .openmeteo_parse_time(block$time)
@@ -176,6 +191,9 @@
       return(NULL)
     }
     value <- .openmeteo_to_canonical_values(raw, v, units_block)
+    if (is.null(value)) {
+      return(NULL)
+    }
     lead_time <- if (lead_is_na) {
       as.difftime(rep(NA_real_, length(value)), units = "hours")
     } else {
@@ -189,16 +207,42 @@
     )
   })
   rows <- rows[!vapply(rows, is.null, logical(1))]
-  vctrs::vec_rbind(!!!rows)
+  .openmeteo_tidy_rows(vctrs::vec_rbind(!!!rows), issue_time, horizon_only)
+}
+
+# Drop rows that carry no information (Open-Meteo pads a model's shorter
+# horizon with nulls) and, for a live issuance, rows before the issue time:
+# the Forecast API always starts at 00:00 of the current day, so without
+# this every issuance would also re-archive the past hours of that day.
+.openmeteo_tidy_rows <- function(rows, issue_time, horizon_only) {
+  if (is.null(rows) || nrow(rows) == 0) {
+    return(.empty_forecast())
+  }
+  keep <- !is.na(rows$value)
+  if (isTRUE(horizon_only)) {
+    keep <- keep & rows$valid_time >= issue_time
+  }
+  rows[keep, , drop = FALSE]
+}
+
+.openmeteo_unit_known <- function(unit) {
+  !is.null(unit) && length(unit) == 1 && !is.na(unit) && nzchar(unit) &&
+    !tolower(unit) %in% c("undefined", "unknown", "null")
 }
 
 #' Parse an Open-Meteo deterministic forecast response
+#'
+#' @param issue_time The run's initialisation time (see
+#'   `.openmeteo_issue_time()`), stamped on every row.
+#' @param horizon_only Keep only rows with `valid_time >= issue_time`.
 #' @keywords internal
 #' @noRd
-.openmeteo_parse_forecast <- function(body, site, variables, source_id, model, now) {
+.openmeteo_parse_forecast <- function(body, site, variables, source_id, model, issue_time,
+                                      horizon_only = TRUE) {
   new_forecast(.openmeteo_parse_plain_forecast(
     body, site, variables, source_id, model,
-    issue_time = now, now = now, lead_is_na = FALSE
+    issue_time = issue_time, now = issue_time, lead_is_na = FALSE,
+    horizon_only = horizon_only
   ))
 }
 
@@ -213,31 +257,48 @@
 }
 
 #' Parse an Open-Meteo Ensemble response
+#'
+#' Member columns (`<var>_memberNN`) become `member = NN`; the unsuffixed
+#' `<var>` column is the ensemble's control run and becomes `member = 0`.
+#' A variable the model does not produce (unit `"undefined"`) is skipped
+#' with a single warning.
 #' @keywords internal
 #' @noRd
-.openmeteo_parse_ensemble <- function(body, site, variables, source_id, model, now) {
+.openmeteo_parse_ensemble <- function(body, site, variables, source_id, model, issue_time) {
   block <- .openmeteo_get_block(body, "hourly")
   units_block <- body$hourly_units %||% list()
   time_utc <- .openmeteo_parse_time(block$time)
   value_cols <- .openmeteo_value_columns(block)
 
+  unknown <- variables[!vapply(variables, function(v) {
+    .openmeteo_unit_known(units_block[[v]] %||% canonical_unit(v))
+  }, logical(1))]
+  unknown <- intersect(unknown, sub("_member[0-9]+$", "", value_cols))
+  for (v in unknown) {
+    .openmeteo_to_canonical_values(list(), v, units_block) # warns once per variable
+  }
+
   rows <- lapply(value_cols, function(col) {
     split <- .openmeteo_split_member_col(col)
-    if (is.null(split) || !(split$variable %in% variables)) {
+    if (is.null(split) && col %in% variables) {
+      split <- list(variable = col, member = 0L)
+    }
+    if (is.null(split) || !(split$variable %in% variables) || split$variable %in% unknown) {
       return(NULL)
     }
     value <- .openmeteo_to_canonical_values(block[[col]], split$variable, units_block)
-    lead_time <- as.difftime(as.numeric(difftime(time_utc, now, units = "hours")), units = "hours")
+    lead_time <- as.difftime(as.numeric(difftime(time_utc, issue_time, units = "hours")),
+                             units = "hours")
     .openmeteo_forecast_rows(
       site, source_id, model,
-      issue_time = rep(now, length(value)),
+      issue_time = rep(issue_time, length(value)),
       valid_time = time_utc,
       variable = split$variable, value = value, lead_time = lead_time,
       member = split$member, stat = NA_character_
     )
   })
   rows <- rows[!vapply(rows, is.null, logical(1))]
-  new_forecast(vctrs::vec_rbind(!!!rows))
+  new_forecast(.openmeteo_tidy_rows(vctrs::vec_rbind(!!!rows), issue_time, horizon_only = TRUE))
 }
 
 #' Parse an Open-Meteo Previous Runs response (daily-lead training pairs)
@@ -310,4 +371,15 @@
   })
   rows <- rows[!vapply(rows, is.null, logical(1))]
   new_forecast(vctrs::vec_rbind(!!!rows))
+}
+
+# A JSON value array as doubles, with nulls kept as NA. unlist() silently
+# DROPS nulls, and Open-Meteo pads the end of a model's shorter horizon with
+# nulls, so unlist() misaligned every value against `time` (and failed with a
+# size mismatch on real ECMWF responses).
+.openmeteo_values <- function(raw) {
+  if (!is.list(raw)) {
+    return(as.double(raw))
+  }
+  vapply(raw, function(x) if (is.null(x)) NA_real_ else as.double(x), double(1))
 }

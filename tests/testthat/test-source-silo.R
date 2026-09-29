@@ -9,7 +9,7 @@ describe("source_silo() fetch → canonical daily obs", {
       to = as.POSIXct("2026-12-31", tz = "UTC")
     )
     with_mocked_silo(make_silo_frame(), {
-      out <- fetch(adapter, site, "temperature_2m", win)
+      out <- fetch(adapter, site, "temperature_2m_max", win)
     })
     expect_canonical_obs(out)
     expect_true(all(out$source == "silo"))
@@ -28,7 +28,7 @@ describe("source_silo() fetch → canonical daily obs", {
     )
     frame <- make_silo_frame(dates = as.Date(c("2026-01-15", "2026-07-15")))
     with_mocked_silo(frame, {
-      out <- fetch(adapter, site, "temperature_2m", win)
+      out <- fetch(adapter, site, "temperature_2m_max", win)
     })
     t <- out$datetime_utc[order(out$datetime_utc)]
     summer_9am <- as.POSIXct("2026-01-15 09:00", tz = "Australia/Sydney")
@@ -50,7 +50,7 @@ describe("source_silo() fetch → canonical daily obs", {
     cap <- new.env()
     with_mocked_silo(make_silo_frame(),
       {
-        out <- fetch(adapter, site, "temperature_2m", win)
+        out <- fetch(adapter, site, "temperature_2m_max", win)
       },
       capture = cap
     )

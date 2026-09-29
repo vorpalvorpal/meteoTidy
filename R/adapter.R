@@ -223,8 +223,17 @@ check_fetch_result <- function(x, adapter, variables) {
 }
 
 # Build one met_adapter from a single named entry of site_sources(site),
-# e.g. list(adapter = "rest", endpoint = ..., mapping = ...).
+# e.g. list(adapter = "rest", endpoint = ..., mapping = ...). A `provides`
+# entry narrows any adapter kind's variables (see .narrow_provides()).
 .adapter_from_source_config <- function(source_name, config) {
+  adapter <- .adapter_from_source_config_impl(source_name, config)
+  if (!is.null(config$provides) && !(config$adapter %in% c("rest", "file", "openmeteo"))) {
+    adapter@provides <- .narrow_provides(adapter@provides, config$provides, source_name)
+  }
+  adapter
+}
+
+.adapter_from_source_config_impl <- function(source_name, config) {
   kind <- config$adapter
   if (is.null(kind)) {
     abort_meteo(
@@ -258,9 +267,11 @@ check_fetch_result <- function(x, adapter, variables) {
   if (kind == "openmeteo") {
     return(source_openmeteo(
       product = config$product %||% "forecast",
-      models = config$models,
+      models = if (is.null(config$models)) NULL else as.character(unlist(config$models)),
       api_key_env = config$api_key_env,
-      source_id = source_name
+      source_id = source_name,
+      provides = config$provides,
+      forecast_days = config$forecast_days
     ))
   }
 
@@ -280,7 +291,8 @@ check_fetch_result <- function(x, adapter, variables) {
     return(source_bom_forecast(
       allow_web_api = config$allow_web_api %||% FALSE,
       store_root = config$store_root,
-      source_id = source_name
+      source_id = source_name,
+      products = as.character(unlist(config$products %||% c("daily", "hourly")))
     ))
   }
 
@@ -289,6 +301,16 @@ check_fetch_result <- function(x, adapter, variables) {
       allow_web_api = config$allow_web_api %||% FALSE,
       store_root = config$store_root,
       source_id = source_name
+    ))
+  }
+
+  if (kind == "eagleio") {
+    return(source_eagleio(
+      nodes = config$nodes,
+      api_key_env = config$api_key_env %||% "EAGLE_API_KEY",
+      source_id = source_name,
+      base_url = config$base_url %||% "https://api.eagle.io/api/v1",
+      stale_after_hours = config$stale_after_hours %||% 6
     ))
   }
 
@@ -313,7 +335,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', 'ecmwf', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', 'ecmwf', 'eagleio', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )
@@ -338,8 +360,35 @@ check_fetch_result <- function(x, adapter, variables) {
 adapters_for_site <- function(site) {
   sources <- site_sources(site)
   adapters <- lapply(names(sources), function(nm) {
-    .adapter_from_source_config(nm, sources[[nm]])
+    cfg <- sources[[nm]]
+    # BOM adapters persist breaker state under a store_root; default it to
+    # the site's own store rather than requiring it in every source block.
+    cfg$store_root <- cfg$store_root %||% site_store_root(site)
+    .adapter_from_source_config(nm, cfg)
   })
   names(adapters) <- names(sources)
   adapters
+}
+
+# Narrow an adapter's default `provides` to a configured subset (problem 6 of
+# the production review: site YAML could not narrow what a built-in adapter
+# requests, so e.g. the Open-Meteo ensemble always asked for every dictionary
+# variable and got HTTP 400/429). NULL keeps the defaults; naming a variable
+# the adapter cannot serve is a configuration error, not a silent no-op.
+.narrow_provides <- function(defaults, provides, source_id) {
+  if (is.null(provides)) {
+    return(defaults)
+  }
+  provides <- as.character(unlist(provides, use.names = FALSE))
+  unknown <- setdiff(provides, defaults)
+  if (length(unknown) > 0) {
+    abort_meteo(
+      c(
+        "Source {.val {source_id}} cannot provide {.val {unknown}}.",
+        "i" = "It can provide: {.val {defaults}}."
+      ),
+      class = "bad_provides"
+    )
+  }
+  provides
 }
