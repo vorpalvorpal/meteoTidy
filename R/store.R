@@ -191,14 +191,25 @@ dataset_path <- function(store_root, table, parts, create = FALSE) {
   invisible(path)
 }
 
-# Write `df` as a new Parquet part-file inside `dir` (created if needed) and
-# verify it reads back.
+# Write `df` as a new Parquet part-file inside `dir` (created if needed):
+# to a temp name first (readers ignore dot-files), verified, renamed into
+# place and verified again. On any failure nothing is left behind -- an
+# unreadable part-file in a partition would break every later read.
 .write_part <- function(dir, df) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  tmp <- .new_part_path(dir, tmp = TRUE)
   path <- .new_part_path(dir)
+  .check_path_length(tmp)
   .check_path_length(path)
-  arrow::write_parquet(df, path)
+  done <- FALSE
+  on.exit(if (!done) unlink(c(tmp, path)), add = TRUE)
+  arrow::write_parquet(df, tmp)
+  .verify_part(tmp, nrow(df))
+  if (!isTRUE(suppressWarnings(file.rename(tmp, path)))) {
+    abort_meteo("Could not move {.path {tmp}} into place.", class = "store_write_unverified")
+  }
   .verify_part(path, nrow(df))
+  done <- TRUE
   invisible(path)
 }
 
