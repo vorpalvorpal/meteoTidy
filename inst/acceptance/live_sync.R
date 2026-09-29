@@ -308,7 +308,10 @@ cat(log_lines, sep = "")
 e_isolated <- all(vapply(c("kat", "blax"), function(sid) {
   b <- src_status(res_e, sid, "broken_obs")
   others <- src_status(res_e, sid, "openmeteo")
-  nrow(b) == 1 && b$status == "failed" && all(others$status == "ok") && all(others$n > 0)
+  # A zero-row "ok" is right when the run was skipped as already archived
+  # (item 7): the earlier sections stored it.
+  archived <- others$n > 0 | grepl("already archived", others$message, fixed = TRUE)
+  nrow(b) == 1 && b$status == "failed" && all(others$status == "ok") && all(archived)
 }, logical(1)))
 e_logged <- any(grepl("broken_obs FAILED", log_lines, fixed = TRUE))
 
