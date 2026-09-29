@@ -104,18 +104,35 @@ NULL
   invisible()
 }
 
+# The sources of one site's status row that FAILED (not merely stale).
+.failed_sources <- function(sources) {
+  if (is.null(sources) || nrow(sources) == 0) {
+    return(character(0))
+  }
+  sources$source[sources$status == "failed"]
+}
+
 # Turn the per-site status table into an error when the scheduler asked for
-# one: "any" -- any site not fully ok; "all" -- every site failed outright
-# (status "failed" or "error"); "none" -- never.
+# one: "any" -- any site not fully ok (a stale source counts); "failed" --
+# any source "failed" or any site "error", ignoring "stale" sources (the
+# production setting: a silent station is logged, a dead feed fails the
+# run); "all" -- every site failed outright (status "failed" or "error");
+# "none" -- never.
 .apply_fail_on <- function(verb, status_tbl, fail_on) {
+  failed_by_site <- lapply(status_tbl$sources %||% vector("list", nrow(status_tbl)), .failed_sources)
+  site_failed <- status_tbl$status %in% c("failed", "error") | lengths(failed_by_site) > 0
   bad <- switch(fail_on,
     none = FALSE,
     any = any(status_tbl$status != "ok"),
+    failed = any(site_failed),
     all = nrow(status_tbl) > 0 && all(status_tbl$status %in% c("failed", "error"))
   )
   if (isTRUE(bad)) {
-    lines <- vapply(which(status_tbl$status != "ok"), function(i) {
-      sprintf("%s: %s", status_tbl$site_id[[i]], status_tbl$status[[i]])
+    rows <- if (identical(fail_on, "failed")) which(site_failed) else which(status_tbl$status != "ok")
+    lines <- vapply(rows, function(i) {
+      failed <- failed_by_site[[i]]
+      sprintf("%s: %s%s", status_tbl$site_id[[i]], status_tbl$status[[i]],
+              if (length(failed)) sprintf(" (failed: %s)", paste(failed, collapse = ", ")) else "")
     }, character(1))
     names(lines) <- rep("x", length(lines))
     lines <- gsub("([{}])", "\\1\\1", lines)

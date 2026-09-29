@@ -83,7 +83,7 @@ NULL
 #' met_sync_daily(site, config = my_pipeline_config)
 #' }
 met_sync_daily <- function(sites, now = .now(), config,
-                           fail_on = c("none", "any", "all")) {
+                           fail_on = c("none", "failed", "any", "all")) {
   fail_on <- rlang::arg_match(fail_on)
   .run_sync_verb("met_sync_daily", sites, config, fail_on, function(site) {
     .met_sync_daily_site(site, now = now, config = config)
