@@ -31,7 +31,10 @@ fetched only when named here; it has no run time, so it is stamped with
 the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
 in \code{forecast_aux} (field \code{issue_time_basis:best_match}). When one of
 several models fails, the others are still returned, with a warning of
-class \code{meteoTidy_warning_openmeteo_model_failed}.}
+class \code{meteoTidy_warning_openmeteo_model_failed}. A named model's run
+already archived in full in the site's store (rows reaching to within
+6 h of the metadata's \code{data_end_time}) is not downloaded again; the
+sync status reports it as "already archived".}
 
 \item{api_key_env}{Optional single string: the \emph{name} of an environment
 variable holding a commercial Open-Meteo API key. See Licensing above.}

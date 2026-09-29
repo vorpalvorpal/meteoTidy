@@ -48,7 +48,10 @@
 #'   the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
 #'   in `forecast_aux` (field `issue_time_basis:best_match`). When one of
 #'   several models fails, the others are still returned, with a warning of
-#'   class `meteoTidy_warning_openmeteo_model_failed`.
+#'   class `meteoTidy_warning_openmeteo_model_failed`. A named model's run
+#'   already archived in full in the site's store (rows reaching to within
+#'   6 h of the metadata's `data_end_time`) is not downloaded again; the
+#'   sync status reports it as "already archived".
 #' @param provides Optional character vector narrowing the variables this
 #'   adapter requests (e.g. from site YAML). Defaults to every hourly
 #'   dictionary variable Open-Meteo serves (a smaller set for `"ensemble"`).
@@ -208,16 +211,46 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
       class = "openmeteo_model_failed"
     )
   }
+  already <- unlist(lapply(pieces, attr, "already_stored"))
   out <- vctrs::vec_rbind(!!!pieces)
   if (is.null(out)) {
-    return(new_forecast(.empty_forecast()))
+    out <- new_forecast(.empty_forecast())
   }
   aux <- .openmeteo_issue_basis_aux(out, site, adapter@source_id)
   out <- out[out$variable %in% variables, , drop = FALSE]
   if (!is.null(aux)) {
     attr(out, "aux") <- aux
   }
+  if (length(already) > 0) {
+    attr(out, "already_stored") <- already
+  }
   out
+}
+
+# Is this run already archived in full? (Follow-up review, item 7: every
+# hourly sync re-downloaded the whole 51-member ensemble only for the store
+# to drop it as duplicates.) Yes when the site's store holds rows for this
+# (source, model, issue_time) reaching to within 6 h of the run's end as
+# Open-Meteo's metadata reports it (`data_end_time`). A run whose end is
+# unknown, or whose stored copy stops short (a fetch that caught a partial
+# run), is downloaded again; the store's row-level dedup keeps only what is
+# new. best_match has no run to check and is always fetched.
+.openmeteo_run_stored <- function(site, source_id, model, run) {
+  root <- site_store_root(site)
+  if (identical(model, "best_match") || is.na(run$data_end) ||
+        length(root) != 1 || is.na(root) || !nzchar(root) || !dir.exists(root)) {
+    return(FALSE)
+  }
+  stored <- tryCatch(
+    store_read_forecast(root, site_id(site), source = source_id,
+                        issue_from = run$issue_time, issue_to = run$issue_time),
+    error = function(e) NULL
+  )
+  if (is.null(stored)) {
+    return(FALSE)
+  }
+  stored <- stored[stored$model %in% model & stored$issue_time == run$issue_time, , drop = FALSE]
+  nrow(stored) > 0 && max(stored$valid_time) >= run$data_end - 6 * 3600
 }
 
 # best_match blends several models, so its issue_time (the 6-hourly cycle
@@ -251,10 +284,17 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
     models = if (identical(model, "best_match")) NULL else model,
     forecast_days = forecast_days
   )
-  issue_time <- if (product %in% .openmeteo_horizon_products()) {
-    .openmeteo_issue_time(product, model, key, now)
-  } else {
-    now
+  issue_time <- now
+  if (product %in% .openmeteo_horizon_products()) {
+    run <- .openmeteo_run_meta(product, model, key, now)
+    issue_time <- run$issue_time
+    if (.openmeteo_run_stored(site, adapter@source_id, model_label, run)) {
+      out <- .empty_forecast()
+      attr(out, "already_stored") <- sprintf(
+        "%s run %s", model_label, format(issue_time, "%Y-%m-%d %H:%M UTC", tz = "UTC")
+      )
+      return(out)
+    }
   }
   body <- .http_get(url, query = list(), now = now)
 

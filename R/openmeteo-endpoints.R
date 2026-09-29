@@ -239,11 +239,19 @@
 #' @keywords internal
 #' @noRd
 .openmeteo_issue_time <- function(product, model, api_key, now) {
+  .openmeteo_run_meta(product, model, api_key, now)$issue_time
+}
+
+# The run about to be fetched: its issue time and, when Open-Meteo reports
+# it, `data_end` (the last valid time the run is known to cover; NA when
+# unknown). Used by .openmeteo_issue_time() and to skip re-downloading a run
+# already archived (item 7).
+.openmeteo_run_meta <- function(product, model, api_key, now) {
   if (is.null(model) || identical(model, "best_match") ||
         !(product %in% .openmeteo_horizon_products())) {
     # best_match blends several models, so it has no single run: the
     # 6-hourly cycle floor is the documented convention.
-    return(.floor_run_cycle(now))
+    return(list(issue_time = .floor_run_cycle(now), data_end = as.POSIXct(NA, tz = "UTC")))
   }
   # A named model must be stamped with its real run. Guessing (the clock's
   # 6 h floor) mislabelled ECMWF's 18 UTC ensemble as 06 UTC in a live run;
@@ -267,5 +275,7 @@
       class = "openmeteo_run_unknown"
     )
   }
-  init
+  end <- if (is.list(meta)) suppressWarnings(as.numeric(meta$data_end_time)) else NA
+  end <- if (length(end) == 1 && !is.na(end)) end else NA_real_
+  list(issue_time = init, data_end = as.POSIXct(end, origin = "1970-01-01", tz = "UTC"))
 }
