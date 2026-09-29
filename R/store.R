@@ -130,6 +130,10 @@ dataset_path <- function(store_root, table, parts, create = FALSE) {
 #' @keywords internal
 #' @noRd
 store_compact <- function(store_root, tables = .store_tables()) {
+  with_store_lock(store_root, .store_compact_impl(store_root, tables))
+}
+
+.store_compact_impl <- function(store_root, tables) {
   unknown <- setdiff(tables, .store_tables())
   if (length(unknown) > 0) {
     abort_meteo(

@@ -57,6 +57,10 @@ store_get_watermark <- function(store_root, site_id, table, source) {
 #' @keywords internal
 #' @noRd
 store_set_watermark <- function(store_root, site_id, table, source, t) {
+  with_store_lock(store_root, .store_set_watermark_impl(store_root, site_id, table, source, t))
+}
+
+.store_set_watermark_impl <- function(store_root, site_id, table, source, t) {
   entries <- .read_watermarks(store_root, site_id)
   stamp <- format(t, "%Y-%m-%dT%H:%M:%OS6Z", tz = "UTC")
   matched <- FALSE

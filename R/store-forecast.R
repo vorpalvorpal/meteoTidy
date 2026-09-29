@@ -60,6 +60,10 @@ store_write_forecast_aux <- function(store_root, aux, now = .now()) {
 # site_id + issue_date, dropping rows whose dedup key already exists in the
 # target partition.
 .write_forecast_like <- function(store_root, df, table, dedup_cols) {
+  with_store_lock(store_root, .write_forecast_like_impl(store_root, df, table, dedup_cols))
+}
+
+.write_forecast_like_impl <- function(store_root, df, table, dedup_cols) {
   if (nrow(df) == 0) {
     return(invisible(df))
   }
@@ -188,6 +192,19 @@ store_read_forecast_aux <- function(store_root, site_id, source = NULL,
   out$issue_date <- NULL
   out$site_id <- as.character(out$site_id)
   out$source <- as.character(out$source)
+
+  # Stores written before the store lock existed (problem 9) can hold the
+  # same key twice from two concurrent writers. Forecasts are immutable, so
+  # the copies are identical issuances: keep the first rather than making
+  # the whole archive unreadable.
+  key_cols <- if (table == "forecasts") {
+    c("site_id", "source", "model", "issue_time", "valid_time", "member", "stat", "variable")
+  } else {
+    c("site_id", "source", "issue_time", "valid_time", "field")
+  }
+  if (nrow(out) > 0) {
+    out <- out[!duplicated(out[key_cols]), , drop = FALSE]
+  }
 
   # The dataset filters above prune on the day-granular issue_date partition
   # column; re-apply the caller's exact POSIXct bounds so same-day earlier/

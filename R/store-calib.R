@@ -72,6 +72,12 @@ calib_manifest <- function(store_root, site_id) {
 #' @keywords internal
 #' @noRd
 calib_write <- function(store_root, site_id, variable, source, tier, coeffs, meta, now = .now()) {
+  with_store_lock(store_root, .calib_write_impl(store_root, site_id, variable, source, tier,
+                                               coeffs, meta, now = now))
+}
+
+.calib_write_impl <- function(store_root, site_id, variable, source, tier, coeffs, meta,
+                              now = .now()) {
   existing <- calib_manifest(store_root, site_id)
   prior <- existing[existing$variable == variable & existing$source == source, , drop = FALSE]
   version <- if (nrow(prior) == 0) 1L else max(prior$version) + 1L

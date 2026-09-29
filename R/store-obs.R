@@ -72,6 +72,10 @@
 #' @noRd
 store_write_obs <- function(store_root, obs, now = .now(), mode = c("append", "supersede")) {
   mode <- rlang::arg_match(mode)
+  with_store_lock(store_root, .store_write_obs_impl(store_root, obs, now = now, mode = mode))
+}
+
+.store_write_obs_impl <- function(store_root, obs, now, mode) {
   obs <- new_obs(obs)
 
   if (nrow(obs) == 0) {
