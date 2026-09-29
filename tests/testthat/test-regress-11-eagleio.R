@@ -352,9 +352,10 @@ describe("problem 11 (found in the live acceptance run): impossible readings", {
       '{"ts":"2026-09-23T00:10:00.000Z","f":{"0":{"v":14.1}}},',
       '{"ts":"2026-09-23T00:20:00.000Z","f":{"0":{"v":-64.8}}}]}'
     ), tmp)
-    obs <- with_routed_http(list("nodes/64642e52fbaed638fdb04100/historic" = function(url) tmp), {
+    # The fixture is 150 h old at prod_now(), so the adapter also warns stale.
+    expect_warning(obs <- with_routed_http(list("nodes/64642e52fbaed638fdb04100/historic" = function(url) tmp), {
       fetch(a, site, "temperature_2m", eagle_window(), now = prod_now())
-    })
+    }), class = "meteoTidy_warning_source_stale")
     expect_equal(nrow(obs), 2)
     expect_equal(obs$qc_flag[obs$value == -64.8], "fail")
     expect_equal(obs$qc_flag[obs$value == 14.1], "ok")
