@@ -82,8 +82,12 @@ calib_write <- function(store_root, site_id, variable, source, tier, coeffs, met
   prior <- existing[existing$variable == variable & existing$source == source, , drop = FALSE]
   version <- if (nrow(prior) == 0) 1L else max(prior$version) + 1L
 
-  dir.create(.calib_dir(store_root, site_id), recursive = TRUE, showWarnings = FALSE)
   coeffs_path <- .calib_coeffs_path(store_root, site_id, variable, source, version)
+  # Coefficient file names are the longest in the store: refuse before
+  # writing anything rather than leave a file Windows cannot reopen.
+  .check_path_length(coeffs_path)
+  .check_path_length(.calib_manifest_path(store_root, site_id))
+  dir.create(.calib_dir(store_root, site_id), recursive = TRUE, showWarnings = FALSE)
   arrow::write_parquet(coeffs, coeffs_path)
 
   row <- tibble::tibble(

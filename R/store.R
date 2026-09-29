@@ -144,9 +144,16 @@ dataset_path <- function(store_root, table, parts, create = FALSE) {
       nchar(file.path(root, "verification_diagnostics", paste0("site_id=", sid))),
       nchar(file.path(root, "obs_transport", paste0("site_id=", sid))),
       nchar(file.path(root, "qc_log", paste0("site_id=", sid)))
-    )
+    ) + name
   }, integer(1))
-  max(per_site) + name
+  # Calibration coefficient files (<variable>-<source>-vN.parquet) carry
+  # their own long names instead of a short part-file name.
+  longest_var <- max(nchar(met_variables()$variable))
+  calib <- vapply(site_ids, function(sid) {
+    nchar(.calib_dir(root, sid)) + 1L + longest_var + 1L + max(nchar(sources)) +
+      nchar("-v999.parquet")
+  }, integer(1))
+  max(per_site, calib)
 }
 
 # Refuse to start a sync whose store paths could exceed the Windows limit:

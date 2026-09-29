@@ -121,3 +121,31 @@ describe("item 1: long store paths", {
     expect_lte(.planned_max_path(root, "blax", "bom_forecast"), 250)
   })
 })
+
+describe("item 1 (post-review): calibration writes are covered by the path guard", {
+  # calib_write() wrote its coefficient file with arrow directly, bypassing
+  # the path-length check, and the up-front sync estimate ignored the
+  # calibrations directory, whose file names (<variable>-<source>-vN) are the
+  # longest in the store.
+  it("counts calibration coefficient files in the up-front estimate", {
+    root <- long_root(120)
+    longest_var <- met_variables()$variable[which.max(nchar(met_variables()$variable))]
+    calib <- .long_form_path(.calib_coeffs_path(root, "blax", longest_var, "bom_forecast", 999L))
+    expect_gte(.planned_max_path(root, "blax", "bom_forecast"), nchar(calib))
+  })
+
+  it("refuses a calibration write whose path is too long, writing nothing", {
+    skip_on_os(c("mac", "linux", "solaris"))
+    root <- long_root(215)
+    coeffs <- tibble::tibble(term = c("intercept", "slope"), estimate = c(0.1, 1.02))
+    meta <- list(train_start = as.POSIXct("2026-01-01", tz = "UTC"),
+                 train_end = as.POSIXct("2026-09-01", tz = "UTC"), n_pairs = 400L)
+    expect_error(
+      calib_write(root, "blax", "soil_moisture_0_to_1cm", "openmeteo", "linear", coeffs, meta,
+                  now = as.POSIXct("2026-09-29", tz = "UTC")),
+      class = "meteoTidy_error_store_path_too_long"
+    )
+    expect_length(list.files(root, pattern = "[.]parquet$", recursive = TRUE), 0)
+    expect_equal(nrow(calib_manifest(root, "blax")), 0)
+  })
+})
