@@ -13,7 +13,7 @@ describe("daily sync archives forecasts and extends history products", {
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
       archive_forecasts = function(store_root, site, sources, now, ...) {
         # record that seasonal is among the sources archived
-        tibble::tibble(source = sources, note = "archived")
+        .source_status_row("forecast", sources, "ok", 0L)
       },
       build_history_hourly = function(...) {
         built$hourly <- built$hourly + 1L
@@ -54,7 +54,7 @@ describe("SILO refetch window supersedes a revised value", {
     # daily sync re-fetches SILO and gets a revised value 25 for the same instant
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
-      archive_forecasts = function(...) tibble::tibble(note = "ok"),
+      archive_forecasts = archived_ok,
       build_history_hourly = function(...) make_obs(n = 1),
       build_history_daily = function(...) make_obs(n = 1),
       .acquire_obs = function(source, site, window, now = NULL, ...) {

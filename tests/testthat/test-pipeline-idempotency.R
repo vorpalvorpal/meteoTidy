@@ -43,7 +43,7 @@ describe("each verb is idempotent over the same inputs and clock", {
     mock_acquisition()
     local_pipeline_mocks()
     testthat::local_mocked_bindings(archive_forecasts = function(...) {
-      tibble::tibble(note = "ok")
+      archived_ok(...)
     })
 
     met_sync_live(site, now = now, config = pipeline_config(root))
@@ -62,7 +62,7 @@ describe("multi-site processing with per-site isolation", {
     now <- as.POSIXct("2026-01-02", tz = "UTC")
     local_pipeline_mocks()
     testthat::local_mocked_bindings(archive_forecasts = function(...) {
-      tibble::tibble(note = "ok")
+      archived_ok(...)
     })
     # site_1's obs source is dead; site_2 is healthy
     calls <- new.env()
