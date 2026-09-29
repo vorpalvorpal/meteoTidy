@@ -6,7 +6,7 @@ Follow-up to the production review.
 
 - **Open-Meteo archives named models, not `best_match`.** The forecast
   product now defaults to `models = c("ecmwf_ifs025", "gfs_global",
-  "icon_global")`, each archived under its own `model` with its real run
+  "icon_global")` (was `"best_match"`), each archived under its own `model` with its real run
   time from Open-Meteo's metadata. `best_match` has no run time; it is
   fetched only when listed in `models:`, and is then flagged in
   `forecast_aux` (field `issue_time_basis:best_match`, "not verifiable").
@@ -25,7 +25,16 @@ Follow-up to the production review.
 - **`met_wide()` default model** for a source with several: each variable
   comes from the first of `best_match`, `ecmwf_ifs025`, `gfs_global`,
   `icon_global`, `icon_seamless`, `hourly` that has it (was: one model for
-  every variable). Provenance gains `model` and `stat` columns.
+  every variable). Provenance gains `model` and `stat` columns. A model
+  whose latest run is more than a day behind the newest listed model
+  (option `meteoTidy.wide_stale_hours`, default 24) drops behind every
+  current model and only serves variables no current model has. After
+  upgrading, the store's last pre-upgrade `best_match` run (16-day horizon)
+  therefore no longer outranks the newer named-model runs. A model named
+  alone in `model =` is served as is.
+- **Precis rows are relabelled.** Existing stores keep their old précis
+  rows as `model = "daily"`; new précis rows are `"daily_precis"`, and
+  `"daily"` now means the geohash web-API forecast.
 
 ## New features
 
@@ -54,7 +63,10 @@ Follow-up to the production review.
   wrote files that read back empty. Paths are now checked before writing
   (`meteoTidy_error_store_path_too_long`; the site's sync ends `"error"`),
   and every write is read back before old files are removed
-  (`meteoTidy_error_store_write_unverified`).
+  (`meteoTidy_error_store_write_unverified`). New part-files are written
+  under a temp name and renamed into place only once verified, so a failed
+  write leaves nothing unreadable behind. Calibration coefficient files are
+  checked too, and the up-front estimate includes them.
 - **Observation churn.** Re-fetching unchanged observations no longer
   supersedes the stored, QC-flagged rows every hour: only a change of value
   or method creates a new version.
