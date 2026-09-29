@@ -5,3 +5,4 @@
 ^_pkgdown\.yml$
 ^\.lintr$
 ^\.DS_Store$
+^CHECKPOINT\.md$

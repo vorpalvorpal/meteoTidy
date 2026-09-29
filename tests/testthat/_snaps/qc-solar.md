@@ -1,4 +1,4 @@
-# clear-sky model determinism / computes the same clear-sky irradiance for a fixed site/time (snapshot)
+# clear-sky model determinism: computes the same clear-sky irradiance for a fixed site/time (snapshot)
 
     Code
       round(as.numeric(ghi), 1)

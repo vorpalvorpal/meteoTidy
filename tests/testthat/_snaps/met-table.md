@@ -1,4 +1,4 @@
-# print() shows the provenance banner / renders the compact per-column tier banner (snapshot)
+# print() shows the provenance banner: renders the compact per-column tier banner (snapshot)
 
     Code
       print(make_met_table())

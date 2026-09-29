@@ -1,4 +1,4 @@
-# keyless requests (free host, non-commercial) / emits the non-commercial notice exactly once (snapshot)
+# keyless requests (free host, non-commercial): emits the non-commercial notice exactly once (snapshot)
 
     Code
       adapter <- source_openmeteo(product = "forecast")
