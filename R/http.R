@@ -14,6 +14,14 @@
 #                             failing (see note below on the terminal class).
 #   - other 4xx (e.g. 401) -> "http_client_error", never retried.
 #   - 2xx                  -> success; body parsed and returned.
+#   - no response in time  -> transient (a timeout, or a dropped/refused
+#                             connection); retried like a 5xx, then
+#                             "http_client_error".
+#
+# Every attempt has a timeout (follow-up review, item 12): option
+# meteoTidy.http_timeout, default 60 s. Without one, a server that accepted
+# the connection and never answered held a scheduled sync -- and the store
+# lock -- indefinitely.
 #
 # Terminal class after retries are exhausted: the plan text does not pin an
 # exact class for "still failing after N attempts", offering
@@ -73,6 +81,9 @@
 #' @param retry Integer, maximum number of attempts for transient failures
 #'   (`429`/`5xx`). Persistent failures (`404`/`410`) and other client errors
 #'   (e.g. `401`) are never retried.
+#' @param timeout Seconds each attempt may take before it is abandoned and
+#'   retried as a transient failure. Defaults to
+#'   `getOption("meteoTidy.http_timeout", 60)`.
 #' @param now Injectable clock; unused directly (no wall-clock comparison is
 #'   made here) but accepted for interface consistency with the rest of the
 #'   package's `now = .now()` seam and so callers/tests can pass a frozen
@@ -88,7 +99,8 @@
 #' @keywords internal
 #' @noRd
 .http_get <- function(url, headers = list(), query = list(), retry = 5, now = .now(),
-                      parse = c("json", "lines", "raw")) {
+                      parse = c("json", "lines", "raw"),
+                      timeout = getOption("meteoTidy.http_timeout", 60)) {
   parse <- match.arg(parse)
   if (identical(Sys.getenv("METEOTIDY_NO_NET"), "1")) {
     abort_meteo(
@@ -108,11 +120,28 @@
     req <- do.call(httr2::req_url_query, c(list(req), query))
   }
   req <- httr2::req_error(req, is_error = function(resp) FALSE)
+  req <- httr2::req_timeout(req, timeout)
 
   attempt <- 0L
   repeat {
     attempt <- attempt + 1L
-    resp <- httr2::req_perform(req)
+    resp <- tryCatch(httr2::req_perform(req), httr2_failure = function(cnd) cnd)
+    if (inherits(resp, "httr2_failure")) {
+      if (attempt < retry) {
+        .http_backoff(attempt)
+        next
+      }
+      reason <- conditionMessage(resp$parent %||% resp) # nolint: object_usage_linter. used via cli glue
+      abort_meteo(
+        c(
+          "Request to {.url {url}} got no response.",
+          "x" = "{reason}",
+          "i" = "Tried {attempt} time{?s} (timeout {timeout} s each)."
+        ),
+        class = "http_client_error",
+        parent = resp
+      )
+    }
     status <- httr2::resp_status(resp)
 
     if (status < 300L) {
