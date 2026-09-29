@@ -69,8 +69,12 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
 
   rows <- lapply(sources, function(source) {
     fc <- .acquire_forecast(source, site, window, now = now)
+    aux <- attr(fc, "aux")
     if (nrow(fc) > 0) {
       store_write_forecast(store_root, fc, now = now)
+    }
+    if (!is.null(aux) && nrow(aux) > 0) {
+      store_write_forecast_aux(store_root, aux, now = now)
     }
     tibble::tibble(source = source, note = "archived", n = nrow(fc))
   })

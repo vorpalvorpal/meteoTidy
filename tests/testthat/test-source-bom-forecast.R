@@ -2,24 +2,27 @@
 # geohash resolution. Mocked FTP/HTTP seams; no live calls.
 
 describe("précis XML → canonical forecast", {
-  it("parses the précis to canonical forecast rows with model == NA", {
+  it("parses the site's précis area to daily forecast rows (model = \"daily\")", {
     site <- make_test_site()
     site <- site_set_resolved(site, c("bom", "geohash"), "r3gx2f")
+    site <- site_set_resolved(site, c("bom", "aac"), "NSW_PT131")
     adapter <- source_bom_forecast(store_root = local_store())
     win <- list(from = as.POSIXct("2026-01-01", tz = "UTC"),
                 to = as.POSIXct("2026-01-08", tz = "UTC"))
     xml <- as.character(read_bom_xml("ftp-precis-sample.xml"))
     fake_ftp <- function(url, ...) xml
     testthat::local_mocked_bindings(.ftp_get = fake_ftp)
-    out <- fetch_forecast(adapter, site, "temperature_2m", win)
+    out <- fetch_forecast(adapter, site, "temperature_2m_max", win)
     expect_canonical_forecast(out)
-    # the edited BOM product has no model name
-    expect_true(all(is.na(out$model)))
+    # the edited BOM product has no NWP model; rows are labelled by product
+    expect_true(all(out$model == "daily"))
+    expect_equal(out$value, c(30, 28))
   })
 
   it("populates forecast_aux with précis text and fire-danger/UV categories verbatim", {
     site <- make_test_site()
     site <- site_set_resolved(site, c("bom", "geohash"), "r3gx2f")
+    site <- site_set_resolved(site, c("bom", "aac"), "NSW_PT131")
     adapter <- source_bom_forecast(store_root = local_store())
     win <- list(from = as.POSIXct("2026-01-01", tz = "UTC"),
                 to = as.POSIXct("2026-01-08", tz = "UTC"))

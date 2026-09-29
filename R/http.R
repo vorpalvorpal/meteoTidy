@@ -214,7 +214,8 @@
 
   rlang::check_installed("curl", reason = "to fetch BOM FTP/mirror product feeds.")
 
-  resp <- curl::curl_fetch_memory(url)
+  handle <- curl::new_handle(useragent = "Mozilla/5.0 (compatible; meteoTidy R package)")
+  resp <- curl::curl_fetch_memory(url, handle = handle)
   if (resp$status_code >= 400L) {
     class <- if (resp$status_code %in% .http_gone_codes) "http_gone" else "http_client_error"
     abort_meteo(

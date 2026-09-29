@@ -291,7 +291,8 @@ check_fetch_result <- function(x, adapter, variables) {
     return(source_bom_forecast(
       allow_web_api = config$allow_web_api %||% FALSE,
       store_root = config$store_root,
-      source_id = source_name
+      source_id = source_name,
+      products = as.character(unlist(config$products %||% c("daily", "hourly")))
     ))
   }
 
@@ -349,7 +350,11 @@ check_fetch_result <- function(x, adapter, variables) {
 adapters_for_site <- function(site) {
   sources <- site_sources(site)
   adapters <- lapply(names(sources), function(nm) {
-    .adapter_from_source_config(nm, sources[[nm]])
+    cfg <- sources[[nm]]
+    # BOM adapters persist breaker state under a store_root; default it to
+    # the site's own store rather than requiring it in every source block.
+    cfg$store_root <- cfg$store_root %||% site_store_root(site)
+    .adapter_from_source_config(nm, cfg)
   })
   names(adapters) <- names(sources)
   adapters

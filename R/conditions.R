@@ -195,7 +195,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       # Production-review fixes (2026-09)
       "meteoTidy_error_store_locked",
       "meteoTidy_error_bad_provides",
-      "meteoTidy_warning_openmeteo_unknown_unit"
+      "meteoTidy_warning_openmeteo_unknown_unit",
+      "meteoTidy_error_bom_bad_response",
+      "meteoTidy_warning_bom_partial",
+      "meteoTidy_error_bom_rung_unconfigured"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -270,7 +273,10 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "met_wide() was given a multi-site collection; the wide table is a per-site product.", # nolint: line_length_linter.
       "Timed out waiting for another process's write lock on the store_root.",
       "A configured `provides` names a variable the adapter cannot serve.",
-      "Open-Meteo reported an undefined unit for a variable (the model does not provide it); the variable was skipped."
+      "Open-Meteo reported an undefined unit for a variable (the model does not provide it); the variable was skipped.",
+      "A BOM response lacks a field the parser requires (e.g. metadata.issue_time).",
+      "One BOM forecast product (daily or hourly) failed; the other was still archived.",
+      "A BOM transport rung is not configured for this site (e.g. no area code); skipped without a breaker strike."
     ),
     stringsAsFactors = FALSE
   )
