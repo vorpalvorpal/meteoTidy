@@ -79,24 +79,37 @@ of its edited forecast — anything not fetched is lost.
 ## Production use
 
 The production setup runs `met_sync_live()` hourly at 20 minutes past the
-hour and `met_sync_daily()` daily at 10:30 Australia/Sydney. The site YAML
-for the Katoomba and Blaxland facilities ships in
+hour, `met_sync_daily()` daily at 10:30 Australia/Sydney, and
+`met_compact()` weekly. The site YAML for the Katoomba and Blaxland
+facilities ships in
 `system.file("acceptance", "sites.yaml", package = "meteoTidy")`.
 
 ```r
-sites <- read_sites_yaml("sites.yaml")   # SILO_API_KEY, EAGLE_API_KEY in the environment
+# run-sync-live.R (hourly, hh:20)
+library(meteoTidy)
+sites <- read_sites_yaml("D:/meteo/sites.yaml")   # SILO_API_KEY, EAGLE_API_KEY in the environment
 live <- list(store_root = "D:/meteo/store",
              obs_sources = c("bom_obs", "eagleio"),
-             forecast_sources = c("openmeteo", "om_ens", "bom_forecast"))
-met_sync_live(sites, config = live, fail_on = "all")   # non-zero exit if nothing was acquired
+             forecast_sources = c("openmeteo", "om_ens", "bom_forecast"),
+             lock_timeout = 1800)
+met_sync_live(sites, config = live, fail_on = "failed")
+
+# run-compact.R (weekly, e.g. Sunday 03:40)
+met_compact("D:/meteo/store", lock_timeout = 1800)
 ```
 
 - Every source runs isolated. A dead feed shows up as that source's
   `"failed"` or `"stale"` row in the result's `sources` column and in a
   one-line-per-site log on stderr.
-- `fail_on = "any"` or `"all"` turns failure into a non-zero `Rscript` exit
-  status.
-- Runs that overlap on the same store serialise on a file lock.
+- `fail_on = "failed"` exits non-zero when any source failed or any site
+  errored, but not for a station that is merely `"stale"` (offline).
+  `"any"` also fails on a stale source; `"all"` only when nothing at all was
+  acquired.
+- Open-Meteo archives named models (ECMWF IFS, GFS, ICON; ECMWF and ICON
+  ensembles) with their real run times, and skips downloading a run already
+  archived. The free-tier notice is shown once per session.
+- Runs that overlap on the same store (including `met_compact()`) serialise
+  on a file lock; HTTP requests time out after 60 s.
 
 `vignette("scheduling")` covers the full config, the schedule and failure
 detection. `inst/acceptance/live_sync.R` checks all of it against the live
