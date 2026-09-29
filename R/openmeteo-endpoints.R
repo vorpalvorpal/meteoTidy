@@ -141,11 +141,20 @@
 
 # Default underlying models when none are configured. The Ensemble API has no
 # "best_match" and returns HTTP 400 without `models` (problem 6), so it
-# defaults to ECMWF IFS 0.25 deg. The deterministic Forecast API defaults to
-# Open-Meteo's "best_match" blend (the only single choice that serves every
-# section 3.1 variable, e.g. soil moisture and boundary-layer height).
+# defaults to ECMWF IFS 0.25 deg (51 members, 15 days) plus DWD's ICON
+# ensemble (40 members, 7.5 days; item 9) -- two independent ensembles for
+# the email's probabilistic panel. The deterministic Forecast API defaults to
+# three NAMED global models, each archived under its own label with its real
+# run time (follow-up review, item 6): "best_match" blends models, so any
+# issue time given to it is a guess and it cannot be verified. Between them
+# the three serve every section 3.1 variable (ECMWF IFS lacks soil moisture,
+# boundary-layer height, UV and 80 m wind; ICON and GFS fill those), and
+# met_wide() picks per variable in this order.
 .openmeteo_default_models <- function(product) {
-  switch(product, ensemble = "ecmwf_ifs025", "best_match")
+  switch(product,
+    ensemble = c("ecmwf_ifs025", "icon_seamless"),
+    c("ecmwf_ifs025", "gfs_global", "icon_global")
+  )
 }
 
 # Default variables for the ensemble: the ensemble API serves a subset of the
@@ -165,9 +174,37 @@
 # dictionary variables (temperature_2m_max, ...) are not valid hourly
 # parameters and would make the request fail with HTTP 400.
 .openmeteo_hourly_variables <- function() {
-  c(
+  unique(c(
     .met31_variables(), "dewpoint_2m", "shortwave_radiation",
-    "precipitation_probability", "apparent_temperature", "cape", "uv_index"
+    "precipitation_probability", "apparent_temperature", "cape", "uv_index",
+    "weather_code", "is_day"
+  ))
+}
+
+# Variables a model does not produce on Open-Meteo (it answers with unit
+# "undefined" and all-null values), checked live at Katoomba 2026-09-29.
+# They are left out of that model's request instead of being fetched and
+# skipped with a warning on every sync (item 9). Other models: request all.
+.openmeteo_model_unsupported <- function(product, model) {
+  if (is.null(model)) {
+    return(character(0))
+  }
+  if (identical(product, "ensemble")) {
+    return(switch(model,
+      icon_seamless = "wind_gusts_10m",
+      character(0)
+    ))
+  }
+  high_wind <- c("wind_speed_120m", "wind_direction_120m", "wind_speed_180m", "wind_direction_180m")
+  switch(model,
+    ecmwf_ifs025 = c(
+      "wind_speed_80m", "wind_direction_80m", high_wind, "boundary_layer_height",
+      "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm", "uv_index"
+    ),
+    gfs_global = c("wind_speed_180m", "wind_direction_180m",
+                   "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm"),
+    icon_global = c("boundary_layer_height", "uv_index"),
+    character(0)
   )
 }
 
@@ -188,16 +225,31 @@
     )
     return(unname(known[model]) %|NA|% paste0(model, "_ensemble"))
   }
-  model
+  # Forecast API model ids whose metadata lives under a different dataset
+  # name (checked live 2026-09-29).
+  known <- c(
+    gfs_global = "ncep_gfs025",
+    gfs025 = "ncep_gfs025",
+    icon_global = "dwd_icon",
+    icon_eu = "dwd_icon_eu",
+    icon_d2 = "dwd_icon_d2",
+    gem_global = "cmc_gem_gdps",
+    bom_access_global = "bom_access_global"
+  )
+  unname(known[model]) %|NA|% model
 }
 
 `%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
 
-.openmeteo_meta_url <- function(product, model, has_key) {
+# The metadata URL for a model's latest run. With a commercial key it goes to
+# the customer- host and carries the key, like every data request (item 8).
+.openmeteo_meta_url <- function(product, model, api_key = NULL) {
   spec <- .openmeteo_endpoint_path(product)
+  has_key <- !is.null(api_key)
   subdomain <- if (has_key) paste0("customer-", spec$subdomain) else spec$subdomain
-  sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
-          subdomain, .openmeteo_meta_name(product, model))
+  url <- sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
+                 subdomain, .openmeteo_meta_name(product, model))
+  if (has_key) paste0(url, "?", .openmeteo_build_query_string(list(apikey = api_key))) else url
 }
 
 # Floor a time to the start of its 6-hourly NWP run cycle (00/06/12/18 UTC).
@@ -221,18 +273,26 @@
 #' @keywords internal
 #' @noRd
 .openmeteo_issue_time <- function(product, model, api_key, now) {
+  .openmeteo_run_meta(product, model, api_key, now)$issue_time
+}
+
+# The run about to be fetched: its issue time and, when Open-Meteo reports
+# it, `data_end` (the last valid time the run is known to cover; NA when
+# unknown). Used by .openmeteo_issue_time() and to skip re-downloading a run
+# already archived (item 7).
+.openmeteo_run_meta <- function(product, model, api_key, now) {
   if (is.null(model) || identical(model, "best_match") ||
         !(product %in% .openmeteo_horizon_products())) {
     # best_match blends several models, so it has no single run: the
     # 6-hourly cycle floor is the documented convention.
-    return(.floor_run_cycle(now))
+    return(list(issue_time = .floor_run_cycle(now), data_end = as.POSIXct(NA, tz = "UTC")))
   }
   # A named model must be stamped with its real run. Guessing (the clock's
   # 6 h floor) mislabelled ECMWF's 18 UTC ensemble as 06 UTC in a live run;
   # failing lets the next sync archive it correctly instead.
   meta_error <- NULL
   meta <- tryCatch(
-    .http_get(.openmeteo_meta_url(product, model, has_key = !is.null(api_key)),
+    .http_get(.openmeteo_meta_url(product, model, api_key = api_key),
               query = list(), now = now),
     error = function(e) {
       meta_error <<- .one_line(conditionMessage(e))
@@ -242,12 +302,14 @@
   init <- if (is.list(meta)) suppressWarnings(as.numeric(meta$last_run_initialisation_time)) else NA
   init <- if (length(init) == 1 && !is.na(init)) as.POSIXct(init, origin = "1970-01-01", tz = "UTC") else NA
   if (is.na(init) || init > now) {
-    why <- gsub("([{}])", "\1\1", meta_error %||% "no valid last_run_initialisation_time")
+    why <- gsub("([{}])", "\\1\\1", meta_error %||% "no valid last_run_initialisation_time")
     abort_meteo(
       c("Could not determine the run time of Open-Meteo model {.val {model}} ({product}); not archiving it this time.",
         x = why),
       class = "openmeteo_run_unknown"
     )
   }
-  init
+  end <- if (is.list(meta)) suppressWarnings(as.numeric(meta$data_end_time)) else NA
+  end <- if (length(end) == 1 && !is.na(end)) end else NA_real_
+  list(issue_time = init, data_end = as.POSIXct(end, origin = "1970-01-01", tz = "UTC"))
 }

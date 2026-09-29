@@ -76,7 +76,9 @@ fill_micro <- function(obs, dict = met_variables(), site = NULL) {
     row <- dict[match(variable, dict$variable), , drop = FALSE]
     stat_class <- row$statistical_class
 
-    filled <- if (isTRUE(stat_class == "circular")) {
+    filled <- if (isTRUE(stat_class == "categorical")) {
+      var_obs # a code cannot be interpolated; its gaps stay gaps
+    } else if (isTRUE(stat_class == "circular")) {
       .fill_circular(var_obs)
     } else if (isTRUE(stat_class == "intermittent")) {
       .fill_rain(var_obs)

@@ -189,7 +189,8 @@ qc_step <- function(obs, dict = met_variables()) {
 # `intermittent` (precipitation) is excluded outright: zero rain for hours is
 # a legitimate dry spell, not a stuck sensor (plans/09-curation-qc.md).
 .qc_persistence_eligible_classes <- function() {
-  setdiff(STAT_CLASS_LEVELS, "intermittent")
+  # `categorical` too: is_day is constant for 12 h and weather_code for days.
+  setdiff(STAT_CLASS_LEVELS, c("intermittent", "categorical"))
 }
 
 #' Persistence (flat-line) rule: flag a sensor stuck for too long
@@ -294,8 +295,8 @@ qc_registry <- function() {
     step = list(fn = qc_step, applies_to = c("linear", "bounded", "circular", "clear_sky_indexed")),
     persistence = list(fn = qc_persistence, applies_to = .qc_persistence_eligible_classes()),
     consistency = list(fn = NULL, applies_to = STAT_CLASS_LEVELS),
-    climatology = list(fn = qc_climatology, applies_to = STAT_CLASS_LEVELS),
-    spatial = list(fn = qc_spatial, applies_to = STAT_CLASS_LEVELS),
+    climatology = list(fn = qc_climatology, applies_to = setdiff(STAT_CLASS_LEVELS, "categorical")),
+    spatial = list(fn = qc_spatial, applies_to = setdiff(STAT_CLASS_LEVELS, "categorical")),
     solar = list(fn = qc_solar, applies_to = "clear_sky_indexed")
   )
 }

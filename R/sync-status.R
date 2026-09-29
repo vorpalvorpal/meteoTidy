@@ -104,18 +104,42 @@ NULL
   invisible()
 }
 
+# The sources of one site's status row that FAILED (not merely stale).
+.failed_sources <- function(sources) {
+  if (is.null(sources) || nrow(sources) == 0) {
+    return(character(0))
+  }
+  sources$source[sources$status == "failed"]
+}
+
 # Turn the per-site status table into an error when the scheduler asked for
-# one: "any" -- any site not fully ok; "all" -- every site failed outright
-# (status "failed" or "error"); "none" -- never.
+# one: "any" -- any site not fully ok (a stale source counts); "failed" --
+# any source "failed" or any site "error", ignoring "stale" sources (the
+# production setting: a silent station is logged, a dead feed fails the
+# run); "all" -- every site failed outright (status "failed" or "error");
+# "none" -- never.
 .apply_fail_on <- function(verb, status_tbl, fail_on) {
+  failed_by_site <- lapply(status_tbl$sources %||% vector("list", nrow(status_tbl)), .failed_sources)
+  # A site that acquired nothing only because every source was stale rolls
+  # up to "failed", but under fail_on = "failed" stale never fails a run.
+  all_stale <- vapply(status_tbl$sources %||% vector("list", nrow(status_tbl)), function(s) {
+    !is.null(s) && nrow(s) > 0 && all(s$status == "stale")
+  }, logical(1))
+  site_failed <- status_tbl$status == "error" |
+    (status_tbl$status == "failed" & !all_stale) |
+    lengths(failed_by_site) > 0
   bad <- switch(fail_on,
     none = FALSE,
     any = any(status_tbl$status != "ok"),
+    failed = any(site_failed),
     all = nrow(status_tbl) > 0 && all(status_tbl$status %in% c("failed", "error"))
   )
   if (isTRUE(bad)) {
-    lines <- vapply(which(status_tbl$status != "ok"), function(i) {
-      sprintf("%s: %s", status_tbl$site_id[[i]], status_tbl$status[[i]])
+    rows <- if (identical(fail_on, "failed")) which(site_failed) else which(status_tbl$status != "ok")
+    lines <- vapply(rows, function(i) {
+      failed <- failed_by_site[[i]]
+      sprintf("%s: %s%s", status_tbl$site_id[[i]], status_tbl$status[[i]],
+              if (length(failed)) sprintf(" (failed: %s)", paste(failed, collapse = ", ")) else "")
     }, character(1))
     names(lines) <- rep("x", length(lines))
     lines <- gsub("([{}])", "\\1\\1", lines)
@@ -132,8 +156,12 @@ NULL
 # for the whole site, the per-site status table, logging, and fail_on.
 .run_sync_verb <- function(verb, sites, config, fail_on, site_fn) {
   status <- for_each_site(sites, function(site) {
-    with_store_lock(config$store_root %||% site_store_root(site),
-                    site_fn(site), timeout = config$lock_timeout)
+    store_root <- config$store_root %||% site_store_root(site)
+    # Fail the site up front (status "error") rather than half-writing it
+    # when its paths could exceed the Windows limit (follow-up item 1).
+    .check_store_paths(store_root, site_id(site),
+                       c(config$obs_sources, config$forecast_sources))
+    with_store_lock(store_root, site_fn(site), timeout = config$lock_timeout)
   }, on_error = "isolate")
 
   ok <- status$status == "ok"

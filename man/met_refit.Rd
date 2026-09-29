@@ -27,7 +27,7 @@ item 3) to fit/refit candidate calibration tiers and bump the calibration
 manifest \strong{only} when Plan 13's skill gate passes (\code{correct_refit()}
 itself performs the verdict-gated \code{calib_write()}); runs \code{verify_run()} over
 \code{config$forecast_sources} for the verification report; and compacts the
-store's Parquet partitions (\code{store_compact()}, Plan 03).
+store's Parquet partitions and logs (\code{\link[=met_compact]{met_compact()}}, Plan 03).
 }
 \details{
 Idempotent: a second call over the same inputs and clock re-verifies but
@@ -43,6 +43,7 @@ met_refit(site, config = my_pipeline_config)
 \seealso{
 Other pipeline: 
 \code{\link{met_backfill}()},
+\code{\link{met_compact}()},
 \code{\link{met_sync_daily}()},
 \code{\link{met_sync_live}()}
 }

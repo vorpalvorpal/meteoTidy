@@ -162,7 +162,7 @@
     )
   }
   first <- .one_line(sub("\n.*", "", gsub("<[^>]+>", " ", msg)))
-  first <- gsub("([{}])", "\1\1", substr(first, 1, 200))
+  first <- gsub("([{}])", "\\1\\1", substr(first, 1, 200))
   if (grepl("^Sorry", msg)) {
     abort_meteo(c("SILO refused the request as invalid.", x = first),
                 class = "silo_bad_request")

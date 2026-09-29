@@ -1,4 +1,91 @@
-# meteoTidy 0.0.0.9000 (development version)
+# meteoTidy 0.0.0.9001 (development version)
+
+Follow-up to the production review.
+
+## Breaking changes
+
+- **Open-Meteo archives named models, not `best_match`.** The forecast
+  product now defaults to `models = c("ecmwf_ifs025", "gfs_global",
+  "icon_global")` (was `"best_match"`), each archived under its own `model` with its real run
+  time from Open-Meteo's metadata. `best_match` has no run time; it is
+  fetched only when listed in `models:`, and is then flagged in
+  `forecast_aux` (field `issue_time_basis:best_match`, "not verifiable").
+  If one model fails, the others are still archived (warning
+  `meteoTidy_warning_openmeteo_model_failed`).
+- **The ensemble adds ICON.** Default `models = c("ecmwf_ifs025",
+  "icon_seamless")`.
+- **BOM daily forecast from the site geohash first.** The web-API daily
+  forecast for `resolved: bom: geohash:` is the first rung; the town précis
+  is a fallback only, and its rows are now `model = "daily_precis"` (was
+  `"daily"`), with a `location` aux row naming the précis area.
+- **`STAT_CLASS_LEVELS` gains `"categorical"`** (for `weather_code` and
+  `is_day`).
+- **The free-tier notice is shown once per R session** (was every call);
+  `options(meteoTidy.openmeteo_free_tier_notice = "always" | "never")`.
+- **`met_wide()` default model** for a source with several: each variable
+  comes from the first of `ecmwf_ifs025`, `gfs_global`, `icon_global`,
+  `best_match`, `icon_seamless`, `hourly` that has it (was: one model for
+  every variable). Provenance gains `model` and `stat` columns. A model
+  whose latest run is more than a day behind the newest listed model
+  (option `meteoTidy.wide_stale_hours`, default 24) drops behind every
+  current model and only serves variables no current model has. After
+  upgrading, the store's last pre-upgrade `best_match` run (16-day horizon)
+  therefore no longer outranks the newer named-model runs (best_match also
+  ranks behind the named models, so it cannot win in the first day after
+  upgrading either). A model named alone in `model =` is served as is.
+- **Precis rows are relabelled.** Existing stores keep their old précis
+  rows as `model = "daily"`; new précis rows are `"daily_precis"`, and
+  `"daily"` now means the geohash web-API forecast.
+
+## New features
+
+- `fail_on = "failed"` on `met_sync_live()`/`met_sync_daily()`: non-zero
+  exit when any source failed or any site errored, not for a merely stale
+  station. This is the recommended production setting.
+- `met_compact()` is exported: compacts every table, including the
+  `qc_log` and `obs_transport` logs, under the store lock. Run it weekly.
+- `met_wide(stat = )`: `"mean"` (default), `"median"` or `"pNN"` -- a
+  percentile across ensemble members, or the product's published percentile
+  (BOM's p50/p75/p90 rain). `model` can be a precedence list.
+- `met_forecast_aux()` reads archived forecast text (précis, BOM
+  `fire_danger_category`, UV category, ...).
+- New archived variables: `weather_code` and `is_day` (dictionary, class
+  `"categorical"`), and BOM's `fire_danger_category` (AFDRS rating text).
+  `uv_index` from Open-Meteo is archived again (see Fixes).
+- Commercial Open-Meteo keys (`api_key_env:`) now reach the metadata
+  requests too; HTTP error messages redact keys in URLs.
+- HTTP requests time out (`options(meteoTidy.http_timeout =)`, default
+  60 s), are retried with backoff, then fail only their own source.
+
+## Fixes
+
+- **Long Windows paths lost data silently.** A store whose part-file paths
+  exceed Windows' 259-character limit (after 8.3 short names are expanded)
+  wrote files that read back empty. Paths are now checked before writing
+  (`meteoTidy_error_store_path_too_long`; the site's sync ends `"error"`),
+  and every write is read back before old files are removed
+  (`meteoTidy_error_store_write_unverified`). New part-files are written
+  under a temp name and renamed into place only once verified, so a failed
+  write leaves nothing unreadable behind. Calibration coefficient files are
+  checked too, and the up-front estimate includes them.
+- **Observation churn.** Re-fetching unchanged observations no longer
+  supersedes the stored, QC-flagged rows every hour: only a change of value
+  or method creates a new version.
+- **Ensemble and model runs are not re-downloaded** when the run is already
+  archived in full; the status says "already archived".
+- **`lead_time` read-back.** Leads were written in hours and truncated by
+  Parquet's `duration[s]` (30649 s came back as 30648 s), so
+  `met_forecast_archive()` aborted "lead_time inconsistent". Forecast times
+  are now written in whole seconds; stores written before are repaired on
+  read.
+- Open-Meteo reports `uv_index` and `is_day` with unit `""` and
+  `weather_code` with `"wmo code"`; these were read as unknown units and
+  dropped.
+- Variables a model does not produce are no longer requested from it.
+- Brace escaping in SILO and Open-Meteo metadata error messages inserted
+  control characters.
+
+# meteoTidy 0.0.0.9000
 
 Production archiving for hourly `met_sync_live()` and daily `met_sync_daily()` runs:
 

@@ -23,7 +23,7 @@ describe("item 11: met_sync_live QCs and fills once, not once per obs source", {
         counts$fill <- counts$fill + 1L
         invisible()
       },
-      archive_forecasts = function(...) tibble::tibble(note = "ok")
+      archive_forecasts = archived_ok
     )
 
     config <- list(store_root = root,

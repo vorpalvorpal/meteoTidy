@@ -154,7 +154,7 @@
 # unit reported in the block's `_units` companion (or the block's own name if
 # it's a suffixed column whose base unit is reported under the base name).
 .openmeteo_to_canonical_values <- function(raw, variable, units_block) {
-  source_unit <- units_block[[variable]] %||% canonical_unit(variable)
+  source_unit <- .openmeteo_source_unit(units_block, variable)
   # Open-Meteo reports unit "undefined" (with all-null values) for a variable
   # the chosen model does not produce -- e.g. boundary_layer_height from
   # ECMWF IFS. Converting that aborted the whole fetch (problem 6 of the
@@ -225,6 +225,19 @@
   rows[keep, , drop = FALSE]
 }
 
+# The unit Open-Meteo reports for `variable`, normalised: dimensionless
+# variables come back as "" (uv_index, is_day) or "wmo code"
+# (weather_code). Both mean the dictionary's dimensionless "1"; reading ""
+# as unknown silently dropped uv_index from every model (item 9).
+.openmeteo_source_unit <- function(units_block, variable) {
+  unit <- units_block[[variable]] %||% canonical_unit(variable)
+  if (identical(canonical_unit(variable), "1") && length(unit) == 1 &&
+        !is.na(unit) && tolower(unit) %in% c("", "wmo code", "1")) {
+    return("1")
+  }
+  unit
+}
+
 .openmeteo_unit_known <- function(unit) {
   !is.null(unit) && length(unit) == 1 && !is.na(unit) && nzchar(unit) &&
     !tolower(unit) %in% c("undefined", "unknown", "null")
@@ -271,7 +284,7 @@
   value_cols <- .openmeteo_value_columns(block)
 
   unknown <- variables[!vapply(variables, function(v) {
-    .openmeteo_unit_known(units_block[[v]] %||% canonical_unit(v))
+    .openmeteo_unit_known(.openmeteo_source_unit(units_block, v))
   }, logical(1))]
   unknown <- intersect(unknown, sub("_member[0-9]+$", "", value_cols))
   for (v in unknown) {

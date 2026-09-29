@@ -140,9 +140,9 @@ describe("problem 10: schedulers can detect failure", {
     ), script)
     rscript <- file.path(R.home("bin"), if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript")
     # METEOTIDY_NO_NET makes the only source fail without touching the network.
-    out <- withr::with_envvar(c(METEOTIDY_NO_NET = "1"), system2(
+    out <- withr::with_envvar(c(METEOTIDY_NO_NET = "1"), suppressWarnings(system2(
       rscript, c("--vanilla", shQuote(script)), stdout = TRUE, stderr = TRUE
-    ))
+    )))  # system2() warns on the non-zero status this test wants
     expect_false(is.null(attr(out, "status")))
     expect_true(attr(out, "status") != 0)
     expect_true(any(grepl("openmeteo FAILED", out)))

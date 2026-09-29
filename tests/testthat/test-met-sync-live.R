@@ -28,7 +28,7 @@ describe("live window is QC'd, filled, and forecasts archived", {
       },
       archive_forecasts = function(...) {
         ran$arch <- ran$arch + 1L
-        tibble::tibble(note = "ok")
+        archived_ok(...)
       }
     )
     status <- met_sync_live(site, now = now, config = pipeline_config(root))
@@ -45,7 +45,7 @@ describe("live window is QC'd, filled, and forecasts archived", {
     calls <- mock_acquisition()
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
-      archive_forecasts = function(...) tibble::tibble(note = "ok")
+      archive_forecasts = archived_ok
     )
     met_sync_live(site,
       now = now,
@@ -65,7 +65,7 @@ describe("graceful degradation on a dead channel", {
     mock_acquisition(fail_sources = "site_aws")
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(), fill_run = function(...) invisible(),
-      archive_forecasts = function(...) tibble::tibble(note = "ok")
+      archive_forecasts = archived_ok
     )
     status <- met_sync_live(met_sites(list(s1, s2)),
       now = now,

@@ -46,6 +46,7 @@ met_history(site, resolution = "daily")
 Other read-api: 
 \code{\link{met_connect}()},
 \code{\link{met_forecast_archive}()},
+\code{\link{met_forecast_aux}()},
 \code{\link{met_record}()},
 \code{\link{met_verification}()}
 }

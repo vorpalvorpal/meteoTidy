@@ -53,10 +53,10 @@ describe("problem 3: issue_time is the model run, so re-syncs dedup", {
     expect_equal(unique(fc$model), "ecmwf_ifs025")
   })
 
-  it("floors best_match (no single run) to the 6-hourly cycle", {
+  it("floors a configured best_match (no single run) to the 6-hourly cycle", {
     site <- make_prod_site("kat")
     fc <- with_routed_http(openmeteo_routes(), {
-      fetch_forecast(source_openmeteo("forecast"), site, "temperature_2m",
+      fetch_forecast(source_openmeteo("forecast", models = "best_match"), site, "temperature_2m",
                      issue_window_for(prod_now()), now = prod_now())
     })
     expect_equal(unique(fc$issue_time), as.POSIXct("2026-09-29 06:00:00", tz = "UTC"))
@@ -81,19 +81,20 @@ describe("problem 3: issue_time is the model run, so re-syncs dedup", {
 })
 
 describe("problem 6: ensemble", {
-  it("defaults to ECMWF IFS 0.25 (the API rejects requests without models)", {
+  it("defaults to named models: ECMWF IFS 0.25 and ICON-EPS (the API rejects requests without models)", {
     site <- make_prod_site("kat")
     cap <- new.env()
     suppressWarnings(with_routed_http(openmeteo_routes(), {
       fetch_forecast(source_openmeteo("ensemble"), site, "temperature_2m",
                      issue_window_for(prod_now()), now = prod_now())
     }, capture = cap))
-    expect_match(grep("/v1/ensemble", cap$urls, value = TRUE), "models=ecmwf_ifs025")
+    ens <- grep("/v1/ensemble", cap$urls, value = TRUE)
+    expect_setequal(sub(".*models=([a-z0-9_]+).*", "\\1", ens), c("ecmwf_ifs025", "icon_seamless"))
   })
 
   it("skips a variable with unit 'undefined' with a warning, keeping the rest", {
     site <- make_prod_site("kat")
-    adapter <- source_openmeteo("ensemble",
+    adapter <- source_openmeteo("ensemble", models = "ecmwf_ifs025",
                                 provides = c("temperature_2m", "wind_speed_10m"))
     # boundary_layer_height is not in the ensemble defaults; the recorded
     # body carries it with unit "undefined" -- request it explicitly.
@@ -184,7 +185,7 @@ describe("problem 3 (found in the live acceptance run): unknown run time", {
     # fallback stamped ECMWF's 18 UTC run as 06 UTC, and the next hour the
     # same data was archived again under its true run time.
     site <- make_prod_site("kat")
-    adapter <- source_openmeteo(product = "ensemble", provides = "temperature_2m")
+    adapter <- source_openmeteo(product = "ensemble", models = "ecmwf_ifs025", provides = "temperature_2m")
     routes <- openmeteo_routes()
     routes[["ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- 503
     err <- tryCatch(

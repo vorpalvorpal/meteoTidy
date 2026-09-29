@@ -13,7 +13,8 @@
 # `pressure_msl`; `ventilation_state()` optionally consumes the directions.
 
 .meteo_builtin_variables <- function() {
-  vctrs::vec_rbind(.meteo_core_variables(), .meteo_forecast_product_variables())
+  vctrs::vec_rbind(.meteo_core_variables(), .meteo_forecast_product_variables(),
+                   .meteo_category_variables())
 }
 
 .meteo_core_variables <- function() {
@@ -160,6 +161,26 @@
       "Daily precipitation total (local calendar day).",
       "Daily probability of precipitation (>= 0.2 mm) (local calendar day).",
       "Daily maximum UV index (local calendar day)."
+    )
+  )
+}
+
+# Codes the report email needs (follow-up review, item 9). They are
+# categories, not quantities, so they get statistical_class "categorical"
+# (never averaged, interpolated or climatology-checked) and a dimensionless
+# unit; min/max are the code ranges, which the range QC rule still applies.
+.meteo_category_variables <- function() {
+  tibble::tibble(
+    variable = c("weather_code", "is_day"),
+    unit = c("1", "1"),
+    min = c(0, 0),
+    max = c(99, 1),
+    statistical_class = c("categorical", "categorical"),
+    measurability_class = c("model_only", "model_only"),
+    circular_period = NA_real_,
+    description = c(
+      "WMO weather interpretation code (WW, 0-99) for the hour; a category, not a quantity.",
+      "1 if the hour is in daylight at the site, else 0."
     )
   )
 }

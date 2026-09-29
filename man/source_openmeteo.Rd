@@ -23,9 +23,17 @@ source_openmeteo(
 \item{models}{Optional character vector of underlying NWP model ids (see
 the (non-exhaustive, extensible) roster in \code{R/openmeteo-endpoints.R}).
 Each model is requested separately and archived under its own \code{model}
-label. \code{NULL} (default) uses \code{"best_match"} for \code{"forecast"} and
-\code{"ecmwf_ifs025"} (ECMWF IFS 0.25 deg) for \code{"ensemble"} -- the Ensemble
-API rejects requests without a model.}
+label, stamped with that model's real run initialisation time from
+Open-Meteo's metadata. \code{NULL} (default) uses \code{c("ecmwf_ifs025", "gfs_global", "icon_global")} for \code{"forecast"} and \code{c("ecmwf_ifs025", "icon_seamless")} (ECMWF IFS 0.25 deg and ICON-EPS) for \code{"ensemble"} -- the Ensemble API rejects
+requests without a model. \code{"best_match"} (Open-Meteo's blend) is
+fetched only when named here; it has no run time, so it is stamped with
+the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
+in \code{forecast_aux} (field \code{issue_time_basis:best_match}). When one of
+several models fails, the others are still returned, with a warning of
+class \code{meteoTidy_warning_openmeteo_model_failed}. A named model's run
+already archived in full in the site's store (rows reaching to within
+6 h of the metadata's \code{data_end_time}) is not downloaded again; the
+sync status reports it as "already archived".}
 
 \item{api_key_env}{Optional single string: the \emph{name} of an environment
 variable holding a commercial Open-Meteo API key. See Licensing above.}
@@ -58,8 +66,11 @@ calls/day, with no API key required. \strong{No product in this adapter aborts
 for lack of a key} -- the free tier technically serves every product
 wrapped here, including Historical Weather and Ensemble. When
 \code{api_key_env} is unset, \code{fetch()}/\code{fetch_forecast()} target the free host
-and emit a one-time \code{\link[=inform_meteo]{inform_meteo()}} reminder that the free tier is
-non-commercial only.
+and emit an \code{\link[=inform_meteo]{inform_meteo()}} reminder (class
+\code{meteoTidy_message_openmeteo_free_tier}) that the free tier is
+non-commercial only -- once per R session by default. Set
+\code{options(meteoTidy.openmeteo_free_tier_notice = "always")} to see it on
+every call, or \code{"never"} to silence it.
 
 Commercial deployments need a \strong{paid} Open-Meteo plan, and within those
 paid plans, the Historical/Climate/Ensemble/Satellite-Radiation APIs
@@ -67,7 +78,10 @@ additionally require the \strong{Professional tier or above}. That is a
 commercial-plan boundary, not a technical key gate this adapter enforces:
 set \code{api_key_env} to the name of an environment variable holding a
 commercial key and the adapter targets the \verb{customer-} API host and sends
-the key; which paid plan is required for a given product/volume is the
+the key on every request, including the model-metadata lookups that give
+each run's time (an empty variable counts as unset, i.e. the free tier).
+Error messages show request URLs with the key replaced by \verb{<redacted>}.
+Which paid plan is required for a given product/volume is the
 caller's responsibility to arrange with Open-Meteo.
 
 The key is read from the named environment variable \strong{at fetch time only}

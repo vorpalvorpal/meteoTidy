@@ -9,7 +9,7 @@
 
 wide_archive <- function(root) {
   site <- make_prod_site("kat", store_root = root, sources = list(
-    openmeteo = list(adapter = "openmeteo", product = "forecast",
+    openmeteo = list(adapter = "openmeteo", product = "forecast", models = "best_match",
                      provides = c("temperature_2m", "wind_speed_10m", "wind_gusts_10m")),
     om_ens = list(adapter = "openmeteo", product = "ensemble", provides = "temperature_2m"),
     bom_forecast = list(adapter = "bom_forecast", allow_web_api = TRUE)

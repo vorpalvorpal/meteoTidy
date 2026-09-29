@@ -35,7 +35,7 @@ NULL
 # Returns the number of rows fetched.
 .sync_write_obs <- function(store_root, obs, now) {
   if (nrow(obs) > 0) {
-    store_write_obs(store_root, obs, now = now, mode = "supersede")
+    store_write_obs(store_root, obs, now = now, mode = "supersede", compare_qc_flag = FALSE)
     if ("transport" %in% names(obs)) {
       transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
       obs_transport_write(store_root, obs[transport_cols], now = now)
@@ -111,10 +111,17 @@ NULL
 #'   another process's write lock on `store_root`.
 #' @param fail_on When to signal an error (class
 #'   `meteoTidy_error_sync_failed`) after all the work is done, so a
-#'   scheduler running `Rscript` sees a non-zero exit status: `"none"`
-#'   (default; never), `"any"` (any site not fully `"ok"` -- any source
-#'   failed), `"all"` (every site failed outright). The condition carries the
-#'   status table as `cnd$status`.
+#'   scheduler running `Rscript` sees a non-zero exit status:
+#'   * `"none"` (default): never.
+#'   * `"failed"` (**recommended for production**): any source `"failed"`
+#'     or any site `"error"`. A `"stale"` source (a station that has stopped
+#'     reporting, e.g. an offline logger) is logged but does not fail the
+#'     run, so one silent station does not fail every hourly run while a dead
+#'     feed still does.
+#'   * `"any"`: any site not fully `"ok"`, including a stale source.
+#'   * `"all"`: only when every site failed outright.
+#'
+#'   The condition carries the status table as `cnd$status`.
 #' @return A tibble with one row per site: `site_id`; `status` -- `"ok"`
 #'   (every source succeeded), `"degraded"` (some source or step failed),
 #'   `"failed"` (every source failed) or `"error"` (an unexpected error);
@@ -137,7 +144,7 @@ NULL
 #' met_sync_live(site, config = my_pipeline_config)
 #' }
 met_sync_live <- function(sites, now = .now(), config,
-                          fail_on = c("none", "any", "all")) {
+                          fail_on = c("none", "failed", "any", "all")) {
   fail_on <- rlang::arg_match(fail_on)
   .run_sync_verb("met_sync_live", sites, config, fail_on, function(site) {
     .met_sync_live_site(site, now = now, config = config)

@@ -63,33 +63,64 @@ NULL
 # hourly rain: 10/25/50 % chance amounts, stored as p90/p75/p50 rows) has no
 # deterministic row to widen; the wide column then takes the "mean" summary
 # if present, else the median ("p50").
-.widen_forecast <- function(fc, variables) {
+#
+# `stat` (item 10): "mean" as above; "pNN" serves the NN-th percentile
+# across ensemble members, else the product's own published "pNN" rows (BOM:
+# p90 = the 10 % chance amount), else a deterministic value as is (a single
+# run has no spread), else NA. Attribute "served" names, per variable, what
+# the column holds: "mean", "pNN", "deterministic", or NA when empty.
+.widen_forecast <- function(fc, variables, stat = "mean") {
   fc <- fc[fc$variable %in% variables, , drop = FALSE]
   base <- unique(fc["valid_time"])
   base <- base[order(base$valid_time), , drop = FALSE]
+  prob <- if (identical(stat, "mean")) NA_real_ else as.numeric(sub("^p", "", stat)) / 100
 
   wide <- base
+  served <- stats::setNames(rep(NA_character_, length(variables)), variables)
   for (v in variables) {
-    sub <- fc[fc$variable == v & is.na(fc$stat), c("valid_time", "value")]
-    if (nrow(sub) == 0) {
-      for (st in c("mean", "p50")) {
+    plain <- fc[fc$variable == v & is.na(fc$stat), , drop = FALSE]
+    has_members <- any(!is.na(plain$member))
+    fun <- mean
+    if (nrow(plain) > 0 && (is.na(prob) || has_members)) {
+      sub <- plain[c("valid_time", "value")]
+      if (has_members && !is.na(prob)) {
+        fun <- function(x, na.rm = TRUE) unname(stats::quantile(x, prob, na.rm = na.rm))
+        served[[v]] <- stat
+      } else {
+        served[[v]] <- if (has_members) "mean" else "deterministic"
+      }
+    } else {
+      wanted <- if (is.na(prob)) c("mean", "p50") else stat
+      sub <- plain[0, c("valid_time", "value")]
+      for (st in wanted) {
         sub <- fc[fc$variable == v & fc$stat %in% st, c("valid_time", "value")]
-        if (nrow(sub) > 0) break
+        if (nrow(sub) > 0) {
+          served[[v]] <- st
+          break
+        }
+      }
+      if (nrow(sub) == 0 && nrow(plain) > 0) {
+        sub <- plain[c("valid_time", "value")]
+        served[[v]] <- "deterministic"
       }
     }
     # A requested variable absent from the archive window (or an entirely
     # empty window) must yield an all-NA column, not an error --
     # stats::aggregate() aborts on zero rows ("no rows to aggregate").
+    sub <- sub[!is.na(sub$value), , drop = FALSE]
     if (nrow(sub) == 0) {
       wide[[v]] <- rep(NA_real_, nrow(wide))
+      served[[v]] <- NA_character_
       next
     }
-    agg <- stats::aggregate(value ~ valid_time, data = sub, FUN = mean, na.rm = TRUE)
+    agg <- stats::aggregate(value ~ valid_time, data = sub, FUN = fun, na.rm = TRUE)
     matched <- agg$value[match(wide$valid_time, agg$valid_time)]
     wide[[v]] <- if (length(matched) == 0) rep(NA_real_, nrow(wide)) else matched
   }
 
-  tibble::as_tibble(wide)
+  wide <- tibble::as_tibble(wide)
+  attr(wide, "served") <- served
+  wide
 }
 
 # Restrict an archived-forecast read to the LATEST issuance per (source,
@@ -189,19 +220,36 @@ NULL
 #' ([met_record()]) for hindcast; `kind = "forecast"` reads the archived
 #' forecast ([met_forecast_archive()]) for prediction.
 #'
-#' For `kind = "forecast"`, exactly **one source and one model** is served
-#' -- never a mean across sources or models (which would blend, say, an
-#' Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
-#' product nobody issued). `source`/`model` choose it; by default the
-#' archive's only source (or `"openmeteo"` when there are several) and that
-#' source's only model (or `"best_match"`, then `"hourly"`, when there are
-#' several). Of that source/model, only the **latest archived issuance** is
-#' served: the archive holds every past issuance overlapping the window
-#' (SCOPING section 9's archive-on-every-sync policy). Ensemble members
-#' within that issuance are reported as the ensemble mean; per-member
-#' trajectories remain available via [met_forecast_archive()]. A variable
-#' published only as quantiles (BOM's hourly rain) is served as its
-#' median (`p50`).
+#' For `kind = "forecast"`, **one source** is served, and **each variable
+#' comes from one model** -- never a mean across sources or models (which
+#' would blend, say, an Open-Meteo run, an ECMWF ensemble and BOM's edited
+#' forecast into a product nobody issued). `source` chooses the source: by
+#' default the archive's only source, or `"openmeteo"` when there are
+#' several. `model` is a precedence list: each variable is served from the
+#' first listed model that has any value for it in the window (no single
+#' Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
+#' height or soil moisture). By default it is the source's only model, or
+#' else `"ecmwf_ifs025"`, `"gfs_global"`, `"icon_global"`, `"best_match"`,
+#' `"icon_seamless"`, `"hourly"` in that order. A model whose latest
+#' archived run is more than a day (option `meteoTidy.wide_stale_hours`,
+#' default 24) behind the newest run of the other listed models -- one no
+#' longer fetched, such as `best_match` after the move to named models --
+#' drops behind every current model, so it only serves variables no current
+#' model has; named alone it is served as is. [met_provenance()] records
+#' the `model` and `stat` behind each column. Of each model, only the
+#' **latest archived issuance** is served: the archive holds every past
+#' issuance overlapping the window (SCOPING section 9's archive-on-every-sync
+#' policy); per-member trajectories and older issuances remain available via
+#' [met_forecast_archive()].
+#'
+#' `stat` picks the statistic. `"mean"` (default): the ensemble mean across
+#' members, a deterministic run's value as is, and for a variable published
+#' only as quantiles (BOM's hourly rain) its median (`p50`). `"pNN"` (e.g.
+#' `"p95"`; `"median"` = `"p50"`): the NN-th percentile across ensemble
+#' members, or the product's own published percentile (BOM publishes rain
+#' `p50`, `p75` and `p90`, i.e. the 50/25/10 % chance amounts), or a
+#' deterministic value as is (provenance `stat = "deterministic"`); `NA` if
+#' the product has none of those.
 #'
 #' meteoHazard contract: `wind_gusts_10m` is never below `wind_speed_10m`
 #' in any row (gusts are raised to the mean wind where a product's own
@@ -216,8 +264,12 @@ NULL
 #'   variable appears as a column even if absent from the underlying data
 #'   (an all-`NA` column) -- the stable section 3.1 shape. Defaults to the
 #'   full section 3.1 contract set (see SCOPING section 3.1).
-#' @param source,model For `kind = "forecast"`: the archived source and
-#'   model to serve (see Details). `NULL` picks the default.
+#' @param source,model For `kind = "forecast"`: the archived source, and
+#'   the model precedence list (a single model, or several: each variable
+#'   comes from the first that has it). `NULL` picks the default (see
+#'   Details).
+#' @param stat For `kind = "forecast"`: `"mean"` (default), `"median"`, or
+#'   a percentile `"p1"`..`"p99"` (see Details).
 #' @param now Injectable current time; see `.now()`.
 #' @return A `met_table`.
 #' @family met-table
@@ -229,8 +281,9 @@ NULL
 #'         kind = "record")
 #' }
 met_wide <- function(site, window, kind = c("forecast", "record"), variables = NULL,
-                     now = .now(), source = NULL, model = NULL) {
+                     now = .now(), source = NULL, model = NULL, stat = "mean") {
   kind <- rlang::arg_match(kind)
+  stat <- .wide_stat(stat)
   sites <- as_met_sites(site)
   if (length(sites@sites) != 1) {
     abort_meteo(
@@ -252,9 +305,15 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   } else {
     long <- met_forecast_archive(site, valid_from = window$from, valid_to = window$to)
     long <- .select_source_model(long, source, model)
+    precedence <- attr(long, "precedence") %||% character(0)
     long <- .latest_issuance(long)
     long <- correct_forecast(site_store_root(s), s, long, now = now)
-    wide <- .widen_forecast(long, variables = value_cols)
+    wide <- .widen_forecast_by_precedence(long, value_cols, precedence, stat)
+    served <- attr(wide, "served")
+    # Provenance describes the rows actually served: per variable, its model.
+    used <- paste(long$variable, long$model, sep = "\r") %in%
+      paste(served$variable, served$model, sep = "\r")
+    long <- long[used, , drop = FALSE]
     names(wide)[names(wide) == "valid_time"] <- "time"
   }
 
@@ -262,6 +321,10 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   attr(wide$time, "tzone") <- "UTC"
 
   provenance <- .met_wide_provenance(site_store_root(s), site_id(s), value_cols, long)
+  if (kind == "forecast") {
+    provenance$model <- served$model[match(provenance$variable, served$variable)]
+    provenance$stat <- served$stat[match(provenance$variable, served$variable)]
+  }
   keys <- list(site_id = site_id(s), from = window$from, to = window$to)
   versions <- list(
     schema_version = .met_wide_schema_version,
@@ -310,9 +373,116 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   }
   src <- pick(sort(unique(fc$source)), source, "openmeteo", "source")
   fc <- fc[fc$source == src, , drop = FALSE]
-  mdl_have <- sort(unique(ifelse(is.na(fc$model), "", fc$model)))
-  mdl <- pick(mdl_have, model, c("best_match", "hourly"), "model")
-  fc[ifelse(is.na(fc$model), "", fc$model) == mdl, , drop = FALSE]
+  fc$model <- ifelse(is.na(fc$model), "", fc$model)
+  mdl_have <- sort(unique(fc$model))
+  precedence <- if (!is.null(model)) {
+    hit <- intersect(model, mdl_have)
+    if (length(hit) == 0) {
+      abort_meteo(
+        c(
+          "No archived forecast from model{?s} {.val {model}} in this window.",
+          "i" = "Available: {.val {mdl_have}}."
+        ),
+        class = "wide_source_unavailable"
+      )
+    }
+    hit
+  } else if (length(mdl_have) == 1) {
+    mdl_have
+  } else {
+    hit <- intersect(.wide_default_model_precedence(), mdl_have)
+    if (length(hit) == 0) {
+      abort_meteo(
+        c(
+          "Several models are archived for this window; choose one.",
+          "i" = "Available: {.val {mdl_have}}. Pass {.arg model} to {.fn met_wide}."
+        ),
+        class = "wide_source_unavailable"
+      )
+    }
+    hit
+  }
+  fc <- fc[fc$model %in% precedence, , drop = FALSE]
+  attr(fc, "precedence") <- .demote_stale_models(fc, precedence)
+  fc
+}
+
+# A model whose latest archived run is more than `stale_hours` behind the
+# newest run of any model in the precedence has stopped being fetched (e.g.
+# best_match after the move to named models, a retired model, a failing
+# feed): it moves behind every current model, so it only serves a variable
+# no current model has. Models run every 6-12 h and publish at different
+# delays, so a gap under a day is normal and does not reorder anything.
+.demote_stale_models <- function(fc, precedence,
+                                 stale_hours = getOption("meteoTidy.wide_stale_hours", 24)) {
+  if (length(precedence) < 2 || nrow(fc) == 0) {
+    return(precedence)
+  }
+  latest <- vapply(precedence, function(m) {
+    it <- fc$issue_time[fc$model == m]
+    if (length(it)) as.numeric(max(it)) else NA_real_
+  }, numeric(1))
+  stale <- !is.na(latest) & latest < max(latest, na.rm = TRUE) - stale_hours * 3600
+  c(precedence[!stale], precedence[stale])
+}
+
+# met_wide()'s default model precedence when a source has several:
+# Open-Meteo's default named deterministic models (ECMWF IFS, GFS, ICON --
+# item 6), then best_match (no verifiable run time; a store upgraded from
+# before item 6 still holds its last runs, which must not outrank the named
+# models even while less than a day old), the default ensembles, then BOM's
+# hourly forecast. Each variable is served from the first of these that has
+# it (item 10).
+.wide_default_model_precedence <- function() {
+  unique(c(.openmeteo_default_models("forecast"), "best_match",
+           .openmeteo_default_models("ensemble"), "hourly"))
+}
+
+# Validate met_wide()'s `stat`: "mean", "median" (= "p50") or "p1".."p99".
+.wide_stat <- function(stat) {
+  if (!is.character(stat) || length(stat) != 1 || is.na(stat)) {
+    stat <- "?"
+  }
+  if (identical(stat, "median")) {
+    stat <- "p50"
+  }
+  if (!identical(stat, "mean") && !grepl("^p([1-9]|[1-9][0-9])$", stat)) {
+    abort_meteo(
+      c(
+        "{.arg stat} must be {.val mean}, {.val median} or a percentile {.val p1}..{.val p99}.",
+        "x" = "Got {.val {stat}}."
+      ),
+      class = "bad_wide_stat"
+    )
+  }
+  stat
+}
+
+# Widen with per-variable model precedence (item 10): each variable comes
+# from the first model in `precedence` with any value in the window -- one
+# model per variable, never a blend across models. Returns the wide tibble
+# with attribute "served": a tibble (variable, model, stat) recording what
+# each column actually holds.
+.widen_forecast_by_precedence <- function(fc, variables, precedence, stat = "mean") {
+  base <- sort(unique(fc$valid_time))
+  wide <- tibble::tibble(valid_time = base)
+  served <- tibble::tibble(variable = variables, model = NA_character_, stat = NA_character_)
+  for (i in seq_along(variables)) {
+    v <- variables[[i]]
+    wide[[v]] <- rep(NA_real_, length(base))
+    for (m in precedence) {
+      w <- .widen_forecast(fc[fc$model == m & fc$variable == v, , drop = FALSE], v, stat)
+      vals <- w[[v]][match(base, w$valid_time)]
+      if (length(vals) > 0 && any(!is.na(vals))) {
+        wide[[v]] <- vals
+        served$model[[i]] <- m
+        served$stat[[i]] <- attr(w, "served")[[v]]
+        break
+      }
+    }
+  }
+  attr(wide, "served") <- served
+  wide
 }
 
 # Post-widening guarantees meteoHazard relies on.

@@ -207,7 +207,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_silo_bad_request",
       "meteoTidy_error_silo_failed",
       "meteoTidy_error_openmeteo_run_unknown",
-      "meteoTidy_warning_source_stale"
+      "meteoTidy_warning_source_stale",
+      "meteoTidy_error_store_path_too_long",
+      "meteoTidy_error_store_write_unverified",
+      "meteoTidy_warning_openmeteo_model_failed",
+      "meteoTidy_error_bad_wide_stat"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -240,7 +244,7 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "A met_sites collection has duplicate site_id values.",
       "A site YAML sources entry has a literal secret value instead of a *_env/*_keyring reference.", # nolint: line_length_linter.
       "A site YAML file has an unrecognised top-level or site-level key.",
-      "store_compact() was asked to compact a table name it does not recognise.",
+      "met_compact() was asked to compact a table name it does not recognise.",
       "calib_read() found no calibration manifest row for the requested key/version.",
       "The no-network test guard tripped: METEOTIDY_NO_NET=1 blocked a live HTTP request.",
       "An HTTP request received a persistent failure status (404/410); never retried.",
@@ -294,7 +298,11 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
       "A SILO request failed for another reason (message has the API key redacted).",
       "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled.",
-      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale)."
+      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale).",
+      "A store path (or the planned paths under a store_root) would exceed what Windows can open (259 characters).",
+      "A part file just written to the store could not be read back with the expected row count.",
+      "One of several configured Open-Meteo models could not be fetched (or its run time was unknown); the other models were still archived.",
+      "met_wide() was asked for a statistic other than \"mean\", \"median\" or a percentile \"p1\"...\"p99\"."
     ),
     stringsAsFactors = FALSE
   )

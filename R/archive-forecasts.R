@@ -71,8 +71,10 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
   # Each source is isolated (problem 7 of the production review): one dead
   # feed is recorded as that source's failure and the others still archive.
   rows <- lapply(sources, function(source) {
-    .run_source("forecast", source, {
+    already <- NULL
+    row <- .run_source("forecast", source, {
       fc <- .acquire_forecast(source, site, window, now = now)
+      already <- attr(fc, "already_stored")
       aux <- attr(fc, "aux")
       if (nrow(fc) > 0) {
         store_write_forecast(store_root, fc, now = now)
@@ -82,6 +84,13 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
       }
       nrow(fc)
     })
+    # Runs the adapter skipped because they are already archived in full
+    # (item 7) are reported, so a zero-row "ok" is not mistaken for no data.
+    if (length(already) > 0 && row$status == "ok") {
+      note <- paste0("already archived: ", paste(already, collapse = ", "))
+      row$message <- if (is.na(row$message)) note else paste(row$message, note, sep = "; ")
+    }
+    row
   })
 
   out <- vctrs::vec_rbind(.empty_source_status(), !!!rows)

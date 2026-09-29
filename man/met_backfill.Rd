@@ -52,6 +52,7 @@ met_backfill(site, config = my_pipeline_config, aws_export = "logger-a.csv")
 }
 \seealso{
 Other pipeline: 
+\code{\link{met_compact}()},
 \code{\link{met_refit}()},
 \code{\link{met_sync_daily}()},
 \code{\link{met_sync_live}()}

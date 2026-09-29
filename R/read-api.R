@@ -113,6 +113,49 @@ met_record <- function(site, variables = NULL, from = NULL, to = NULL, as_of = N
   new_obs(vctrs::vec_rbind(!!!rows))
 }
 
+#' The archived forecast text fields
+#'
+#' Returns the archived `forecast_aux` rows for `site`: the non-numeric
+#' elements of a forecast issuance, one row per `(site_id, source,
+#' issue_time, valid_time, field)` with the text in `value_text`. For BOM:
+#' `precis`, `forecast`, `fire_danger`, `fire_danger_category` (the AFDRS
+#' rating), `uv_category`, `chance_of_no_rain_category`, `icon` and
+#' `location`; for an Open-Meteo `best_match` issuance,
+#' `issue_time_basis:best_match`.
+#'
+#' @inheritParams met_forecast_archive
+#' @param field Optional character vector to filter `field`.
+#' @return A tibble with columns `site_id`, `source`, `issue_time`,
+#'   `valid_time`, `field`, `value_text`.
+#' @family read-api
+#' @export
+#' @examples
+#' \dontrun{
+#' met_forecast_aux(site, source = "bom_forecast", field = "fire_danger_category")
+#' }
+met_forecast_aux <- function(site, source = NULL, field = NULL, issue_from = NULL, issue_to = NULL,
+                             valid_from = NULL, valid_to = NULL) {
+  sites <- as_met_sites(site)
+  rows <- lapply(sites@sites, function(s) {
+    store_read_forecast_aux(site_store_root(s), site_id(s), source = source,
+                            issue_from = issue_from, issue_to = issue_to,
+                            valid_from = valid_from, valid_to = valid_to)
+  })
+  out <- vctrs::vec_rbind(!!!rows)
+  if (is.null(out) || nrow(out) == 0) {
+    return(tibble::tibble(
+      site_id = character(0), source = character(0),
+      issue_time = as.POSIXct(character(0), tz = "UTC"),
+      valid_time = as.POSIXct(character(0), tz = "UTC"),
+      field = character(0), value_text = character(0)
+    ))
+  }
+  if (!is.null(field)) {
+    out <- out[out$field %in% field, , drop = FALSE]
+  }
+  new_forecast_aux(out)
+}
+
 #' The archived forecast record
 #'
 #' Returns archived forecasts for `site` (SCOPING §4/§9): every issuance is

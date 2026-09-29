@@ -49,7 +49,7 @@ NULL
   for (source in config$obs_sources) {
     obs <- .acquire_obs(source, site, window, now = now)
     if (nrow(obs) > 0) {
-      store_write_obs(store_root, obs, now = now, mode = "supersede")
+      store_write_obs(store_root, obs, now = now, mode = "supersede", compare_qc_flag = FALSE)
     }
   }
 

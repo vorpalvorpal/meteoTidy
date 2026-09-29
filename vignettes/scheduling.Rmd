@@ -216,10 +216,25 @@ sites:
           temperature_2m: 64642e52fbaed638fdb04100
       bom_obs:     {adapter: bom_obs, allow_web_api: true}
       silo:        {adapter: silo, dataset: data_drill, api_key_env: SILO_API_KEY}
-      openmeteo:   {adapter: openmeteo, product: forecast}
-      om_ens:      {adapter: openmeteo, product: ensemble, models: [ecmwf_ifs025]}
+      openmeteo:   {adapter: openmeteo, product: forecast}   # ECMWF IFS, GFS, ICON
+      om_ens:      {adapter: openmeteo, product: ensemble}   # ECMWF IFS + ICON ensembles
       bom_forecast: {adapter: bom_forecast, allow_web_api: true}
 ```
+
+- `openmeteo` archives three named global models -- `ecmwf_ifs025`,
+  `gfs_global`, `icon_global` -- each stamped with its real run time from
+  Open-Meteo's metadata. `best_match` is not archived unless listed in
+  `models:`, and then it is flagged as having no verifiable run time.
+- `om_ens` archives the ECMWF IFS (51 members, 15 days) and ICON (40
+  members, 7.5 days) ensembles.
+- A run already archived in full is not downloaded again, so hourly polling
+  costs one small metadata request per model between runs.
+- `bom_forecast` takes the daily forecast from BOM's web API for the site's
+  own geohash; the town précis (`aac:`) is only a fallback, and its rows are
+  labelled `model = "daily_precis"`.
+- The free-tier notice is shown once per R session. For a commercial
+  Open-Meteo plan add `api_key_env: OPEN_METEO_KEY` to both Open-Meteo
+  sources; every request then goes to the `customer-` host with the key.
 
 Blaxland is the same, with `latitude: -33.73`, `longitude: 150.61`,
 `elevation: 250`, `geohash: r65050`, `aac: NSW_PT129` (Springwood),
@@ -264,18 +279,49 @@ scheduler's environment.
 - **`met_sync_daily()` once a day at 10:30 Australia/Sydney.** SILO's
   previous day closes at 9 am local, and the 30-day refetch window picks up
   later SILO revisions.
+- **`met_compact()` weekly, e.g. Sunday 03:40.** Every sync appends small
+  Parquet files (one per partition written, plus one per site to the
+  `qc_log` and `obs_transport` logs). Compaction rewrites each partition as
+  one file; reads return the same rows before and after.
 
-Both verbs lock `store_root`. If a slow hourly run overlaps the next one, the
-second waits for the lock (up to `lock_timeout`) rather than writing
-duplicates, so there is no need for the scheduler to prevent overlap.
+All three lock `store_root`. If a slow hourly run overlaps the next one (or
+the compaction), the second waits for the lock (up to `lock_timeout`)
+rather than writing duplicates, so there is no need for the scheduler to
+prevent overlap.
 
-A minimal `Rscript` entry point:
+Each HTTP request times out after 60 s (`options(meteoTidy.http_timeout =)`),
+is retried with backoff, and then fails only its own source, so a hung
+upstream cannot hold the lock indefinitely.
+
+The production `Rscript` entry points:
 
 ```{r}
-# run-sync-live.R
+# run-sync-live.R -- hourly at hh:20
 library(meteoTidy)
 sites <- read_sites_yaml("D:/meteo/sites.yaml")
-met_sync_live(sites, config = live_config, fail_on = "all")
+met_sync_live(sites, config = live_config, fail_on = "failed")
+```
+
+```{r}
+# run-sync-daily.R -- daily at 10:30 Australia/Sydney
+library(meteoTidy)
+sites <- read_sites_yaml("D:/meteo/sites.yaml")
+met_sync_daily(sites, config = daily_config, fail_on = "failed")
+```
+
+```{r}
+# run-compact.R -- weekly, e.g. Sunday 03:40
+library(meteoTidy)
+print(met_compact("D:/meteo/store", lock_timeout = 1800))
+```
+
+With `taskscheduleR`:
+
+```{r}
+taskscheduleR::taskscheduler_create(
+  taskname = "meteoTidy-compact", rscript = "D:/meteo/run-compact.R",
+  schedule = "WEEKLY", days = "SUN", starttime = "03:40"
+)
 ```
 
 ### Detecting failure
@@ -292,13 +338,16 @@ meteoTidy met_sync_live blax: degraded | bom_obs ok 884 | eagleio STALE (eagle.i
 | `fail_on` | Exit status is non-zero when |
 | --------- | ---------------------------- |
 | `"none"` (default) | never; inspect the returned table instead |
+| `"failed"` (recommended) | any source `"failed"` or any site `"error"`; a `"stale"` source alone does not |
 | `"all"`   | every site failed outright (nothing was acquired) |
 | `"any"`   | any site is not fully `"ok"`, including one stale or failed source |
 
-Use `"all"` for alarms, and log stderr for the per-source detail. A station
-that is offline (as Blaxland's eagle.io logger has been since
-24 September 2026) makes every run `"degraded"`, so `"any"` would alarm on
-every run until it is fixed.
+Use `"failed"` in production, and log stderr for the per-source detail. A
+station that is offline (as Blaxland's eagle.io logger has been since
+24 September 2026) is `"stale"`, which is not a fault in meteoTidy or the
+feed, so `"failed"` stays quiet about it, while `"any"` would alarm on every
+run until it is fixed. `"all"` misses a dead feed as long as anything else
+works.
 
 The returned tibble has the same information, structured: `status` per site
 and a `sources` list-column with each source's `status` (`"ok"`,
@@ -308,10 +357,23 @@ error condition (`meteoTidy_error_sync_failed`) carries that table as
 
 ### Reading for meteoHazard
 
-`met_wide()` serves one source and model per call, never a blend:
+`met_wide()` serves one source per call, and each variable from one model,
+never a blend. `model` is a precedence list: each variable comes from the
+first listed model that has it (by default ECMWF IFS, then GFS, then ICON,
+so boundary-layer height comes from GFS and soil moisture from ICON).
+`met_provenance()` names the model and statistic behind each column.
 
 ```{r}
 next72 <- list(from = now, to = now + 71 * 3600)
-met <- met_wide(sites@sites[[1]], next72)                           # Open-Meteo best_match
+met <- met_wide(sites@sites[[1]], next72)                           # Open-Meteo, per-variable models
 bom <- met_wide(sites@sites[[1]], next72, source = "bom_forecast", model = "hourly")
+gust95 <- met_wide(sites@sites[[1]], next72, source = "om_ens",      # 95th percentile of members
+                   variables = c("wind_gusts_10m", "temperature_2m"), stat = "p95")
+rain90 <- met_wide(sites@sites[[1]], next72, source = "bom_forecast", model = "hourly",
+                   variables = "precipitation", stat = "p90")      # BOM's 10 % chance amount
 ```
+
+For the email's other fields, pass `variables` explicitly, e.g.
+`c("weather_code", "is_day", "uv_index", "cape", "wind_speed_80m")`;
+text fields (précis, `fire_danger_category`, UV category) are in
+`met_forecast_aux()`.

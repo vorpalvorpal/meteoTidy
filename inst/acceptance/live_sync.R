@@ -20,6 +20,22 @@
 #   e. a forced source failure is isolated and named; fail_on = "any" gives
 #      a non-zero Rscript exit status
 #   f. two concurrent met_sync_live() processes: no duplicates, no lost rows
+#   h. (follow-up 1) every row a sync reports is readable back from this
+#      scratch path (run once with a long path, once short); a store root
+#      too long for Windows is refused with status "error", nothing written
+#   i. (follow-up 2) fail_on = "failed": exit 0 while blax's eagle.io is
+#      merely stale; non-zero when a source fails
+#   j. (follow-up 3) BOM daily forecast from the site geohash web API (model
+#      "daily", location names the geohash), not the town précis
+#   k. (follow-up 4) re-fetching observations never overwrites a QC verdict or re-versions a key
+#   l. (follow-up 5) met_compact() cuts the file count, reads unchanged
+#   m. (follow-up 7) the second live run downloads no Open-Meteo run that is
+#      already archived ("already archived" in the status)
+#   n. (follow-up 9) the email variables, both ensembles and BOM's fire
+#      danger category are archived
+#   o. (follow-up 11) every source reads back (met_forecast_archive(),
+#      met_record()) with lead_time == valid_time - issue_time
+#   p. (follow-up 10) met_wide() per-variable models and stat = "p95"
 #   g. store size and estimated growth per day
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
@@ -151,6 +167,7 @@ section("a. live sync twice")
 run1 <- timed(met_sync_live(sites, now = now_utc(), config = live_cfg))
 bytes_live1 <- dir_bytes(root)
 rows1 <- row_counts(root)
+fc_after1 <- read_table(root, "forecasts")
 print(run1$value[c("site_id", "status", "message")])
 run2 <- timed(met_sync_live(sites, now = now_utc(), config = live_cfg))
 rows2 <- row_counts(root)
@@ -232,8 +249,9 @@ c_ok <- tryCatch({
                         RH = met_df$relative_humidity_2m, direct_solar = met_df$direct_radiation,
                         diffuse_solar = met_df$diffuse_radiation, pressure = met_df$surface_pressure,
                         convert_pressure = TRUE, verbose = FALSE)
-    cat(sprintf("%s: 72 rows from %s; dust %d rows, litter %d rows, odour %s, TWL range %.0f-%.0f\n",
+    cat(sprintf("%s: 72 rows from %s (%s); dust %d rows, litter %d rows, odour %s, TWL range %.0f-%.0f\n",
                 site_id(site), paste(unique(stats::na.omit(prov$source)), collapse = "/"),
+                paste(unique(stats::na.omit(prov$model)), collapse = ", "),
                 NROW(dust), NROW(litter), paste(dim(odour), collapse = "x"),
                 min(as.numeric(twl), na.rm = TRUE), max(as.numeric(twl), na.rm = TRUE)))
     all_ok <- all_ok && NROW(dust) > 0 && NROW(litter) > 0 && length(odour) > 0 && any(is.finite(as.numeric(twl)))
@@ -290,7 +308,10 @@ cat(log_lines, sep = "")
 e_isolated <- all(vapply(c("kat", "blax"), function(sid) {
   b <- src_status(res_e, sid, "broken_obs")
   others <- src_status(res_e, sid, "openmeteo")
-  nrow(b) == 1 && b$status == "failed" && all(others$status == "ok") && all(others$n > 0)
+  # A zero-row "ok" is right when the run was skipped as already archived
+  # (item 7): the earlier sections stored it.
+  archived <- others$n > 0 | grepl("already archived", others$message, fixed = TRUE)
+  nrow(b) == 1 && b$status == "failed" && all(others$status == "ok") && all(archived)
 }, logical(1)))
 e_logged <- any(grepl("broken_obs FAILED", log_lines, fixed = TRUE))
 
@@ -312,7 +333,9 @@ check("e", e_isolated && e_logged && status != 0,
 # ---- f. concurrent processes ------------------------------------------------------
 
 section("f. two concurrent live syncs")
-root_f <- file.path(scratch, "store-concurrent")
+# Same length as the main "store" root plus one, so the long-path run stays
+# within the store-path budget (item 1 refuses a longer root outright).
+root_f <- file.path(scratch, "storec")
 dir.create(root_f, showWarnings = FALSE)
 sites_f <- write_sites(root_f, file.path(scratch, "sites-concurrent.yaml"))
 go <- file.path(scratch, "GO")
@@ -324,6 +347,8 @@ worker <- function(loader, sites_path, cfg, go) {
   t <- as.POSIXct(trunc(Sys.time(), "secs"))
   attr(t, "tzone") <- "UTC"
   res <- met_sync_live(read_sites_yaml(sites_path), now = t, config = cfg)
+  bad <- res$status == "error"
+  if (any(bad)) stop(paste(res$site_id[bad], res$message[bad], sep = ": ", collapse = "; "))
   do.call(rbind, lapply(seq_len(nrow(res)), function(i) cbind(site_id = res$site_id[i], res$sources[[i]])))
 }
 procs <- lapply(1:2, function(i) callr::r_bg(worker, list(load_meteotidy, sites_f, cfg_f, go),
@@ -356,6 +381,192 @@ if (f_ok) {
 }
 check("f", f_ok, "concurrent met_sync_live(): no duplicate keys, every process's rows present")
 
+# ---- h. long paths (follow-up 1) --------------------------------------------------------
+
+section("h. store paths")
+long_form <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
+longest <- max(nchar(long_form(list.files(root, recursive = TRUE, full.names = TRUE))))
+cat(sprintf("scratch root: %d chars (long form %d); longest stored path: %d chars\n",
+            nchar(root), nchar(long_form(root)), longest))
+h_rows <- TRUE
+for (sid in c("kat", "blax")) {
+  for (src in live_cfg$forecast_sources) {
+    s <- src_status(run1$value, sid, src)
+    stored <- sum(fc_after1$site_id == sid & fc_after1$source == src)
+    cat(sprintf("run 1 %s/%s: reported %d rows, read back %d\n", sid, src, s$n, stored))
+    h_rows <- h_rows && nrow(s) == 1 && s$status == "ok" && stored == s$n
+  }
+}
+too_long <- file.path(scratch, strrep("x", max(1, 262 - nchar(long_form(scratch)))))
+res_h <- met_sync_live(read_sites_yaml(write_sites(too_long, file.path(scratch, "sites-too-long.yaml"))),
+                       now = now_utc(), config = modifyList(live_cfg, list(store_root = too_long)))
+h_refused <- all(res_h$status == "error") && all(grepl("too long", res_h$message)) &&
+  length(list.files(too_long, pattern = "[.]parquet$", recursive = TRUE)) == 0
+cat(sprintf("root of %d chars: statuses %s; %s\n", nchar(too_long), paste(res_h$status, collapse = "/"),
+            substr(res_h$message[1], 1, 140)))
+check("h", h_rows && h_refused && longest <= 259,
+      sprintf("all run-1 rows read back (longest path %d chars); a %d-char root is refused, nothing written",
+              longest, nchar(too_long)))
+
+# ---- i. fail_on = "failed" (follow-up 2) --------------------------------------------------
+
+section("i. fail_on = 'failed'")
+child_i <- function(name, sites_path, obs_sources) {
+  path <- file.path(scratch, paste0(name, ".R"))
+  writeLines(c(
+    paste("load_meteotidy <-", paste(deparse(load_meteotidy), collapse = "\n")),
+    "load_meteotidy()",
+    sprintf("cfg <- list(store_root = %s, obs_sources = %s, forecast_sources = character(0))",
+            deparse(root), deparse(obs_sources)),
+    sprintf("invisible(met_sync_live(read_sites_yaml(%s), config = cfg, fail_on = 'failed'))", deparse(sites_path))
+  ), path)
+  suppressWarnings(system2(file.path(R.home("bin"), "Rscript"), c("--vanilla", shQuote(path)),
+                           stdout = FALSE, stderr = file.path(scratch, paste0(name, ".log"))))
+}
+st_stale <- child_i("fail_on_failed_stale", sites_path, "eagleio")
+st_broken <- child_i("fail_on_failed_broken", broken_path, c("eagleio", "broken_obs"))
+cat(sprintf("eagle.io only (blax stale): exit %s; with a broken source: exit %s\n", st_stale, st_broken))
+cat(utils::tail(readLines(file.path(scratch, "fail_on_failed_broken.log")), 3), sep = "\n")
+check("i", st_stale == 0 && st_broken != 0,
+      sprintf("fail_on = 'failed': stale-only run exits %s, failed source exits %s", st_stale, st_broken))
+
+# ---- j. BOM daily source (follow-up 3) ----------------------------------------------------
+
+section("j. BOM daily forecast source")
+aux_all <- read_table(root, "forecast_aux")
+j_ok <- TRUE
+for (sid in c("kat", "blax")) {
+  bom <- fc_b[fc_b$site_id == sid & fc_b$source == "bom_forecast", ]
+  loc <- unique(aux_all$value_text[aux_all$site_id == sid & aux_all$source == "bom_forecast" &
+                                     aux_all$field == "location"])
+  gh <- sites@sites[[match(sid, vapply(sites@sites, site_id, ""))]]@resolved$bom$geohash
+  cat(sprintf("%s: models %s; location %s\n", sid, paste(sort(unique(bom$model)), collapse = ", "),
+              paste(loc, collapse = " | ")))
+  j_ok <- j_ok && "daily" %in% bom$model && !"daily_precis" %in% bom$model &&
+    any(grepl(gh, loc, fixed = TRUE))
+}
+check("j", j_ok, "BOM daily rows come from the site geohash web API, labelled with the geohash")
+
+# ---- k. no observation churn (follow-up 4) ------------------------------------------------
+
+section("k. observation churn")
+obs_k <- read_table(root, "observations")
+cur <- obs_k[!obs_k$superseded, ]
+old <- obs_k[obs_k$superseded, ]
+m <- match(do.call(paste, old[obs_key]), do.call(paste, cur[obs_key]))
+same <- !is.na(m) & mapply(function(a, b) isTRUE(all.equal(a, b)), old$value, cur$value[m]) &
+  old$method == cur$method[m]
+# QC's own verdict (raw "ok" -> "suspect", once) is a legitimate revision.
+# Churn is a re-fetch overwriting that verdict (a current raw "ok" over a
+# superseded QC flag with the same value) or a key re-versioned run after run.
+reverted <- same & old$qc_flag != "ok" & cur$qc_flag[m] == "ok"
+versions <- table(do.call(paste, obs_k[obs_key]))
+cat(sprintf("%d current rows, %d superseded (%d QC flag changes); reverted by a re-fetch: %d; keys with > 2 versions: %d\n",
+            nrow(cur), nrow(old), sum(same), sum(reverted), sum(versions > 2)))
+check("k", sum(reverted) == 0 && all(versions <= 2),
+      sprintf("no re-fetch overwrote a QC verdict (%d QC flag changes kept); no key re-versioned", sum(same)))
+
+# ---- l. compaction (follow-up 5) --------------------------------------------------------------
+
+section("l. met_compact()")
+n_files <- function(r) length(list.files(r, pattern = "[.]parquet$", recursive = TRUE))
+reads <- function(r) {
+  out <- list()
+  for (s in sites@sites) {
+    sid <- site_id(s)
+    out[[paste0(sid, "_fc")]] <- nrow(met_forecast_archive(s))
+    out[[paste0(sid, "_obs")]] <- nrow(meteoTidy:::store_read_obs(r, sid))
+    out[[paste0(sid, "_qc")]] <- nrow(meteoTidy:::qc_log_read(r, sid))
+  }
+  unlist(out)
+}
+before_files <- n_files(root)
+before_reads <- reads(root)
+comp <- timed(met_compact(root))
+print(as.data.frame(comp$value), row.names = FALSE)
+after_reads <- reads(root)
+cat(sprintf("parquet files %d -> %d in %.0f s; reads %s\n", before_files, n_files(root), comp$secs,
+            if (identical(before_reads, after_reads)) "unchanged" else "CHANGED"))
+check("l", n_files(root) < before_files && identical(before_reads, after_reads),
+      sprintf("files %d -> %d, every read unchanged", before_files, n_files(root)))
+
+# ---- m. no re-download of an archived run (follow-up 7) ----------------------------------------
+
+section("m. skip archived runs")
+m_ok <- TRUE
+for (sid in c("kat", "blax")) {
+  for (src in c("openmeteo", "om_ens")) {
+    s <- src_status(run2$value, sid, src)
+    cat(sprintf("run 2 %s/%s: %d new rows; %s\n", sid, src, s$n, s$message))
+    # A new run published between the two syncs is legitimately downloaded.
+    m_ok <- m_ok && nrow(s) == 1 && s$status == "ok" && grepl("already archived", s$message)
+  }
+}
+check("m", m_ok, "second live run skipped every Open-Meteo run already archived")
+
+# ---- n. email variables (follow-up 9) ---------------------------------------------------------
+
+section("n. email variables")
+email_vars <- c("weather_code", "is_day", "uv_index", "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm",
+                "boundary_layer_height", "cape", "cloud_cover", "wind_direction_10m", "wind_gusts_10m",
+                "wind_speed_80m", "direct_radiation", "diffuse_radiation", "shortwave_radiation",
+                "surface_pressure")
+n_ok <- TRUE
+for (sid in c("kat", "blax")) {
+  om <- fc_b[fc_b$site_id == sid & fc_b$source == "openmeteo" & !is.na(fc_b$value), ]
+  missing <- setdiff(email_vars, om$variable)
+  ens_models <- sort(unique(fc_b$model[fc_b$site_id == sid & fc_b$source == "om_ens"]))
+  fdc <- aux_all[aux_all$site_id == sid & aux_all$field == "fire_danger_category", ]
+  cat(sprintf("%s: missing %s; ensembles %s; fire_danger_category %s\n", sid,
+              if (length(missing)) paste(missing, collapse = ", ") else "none",
+              paste(ens_models, collapse = " + "),
+              paste(utils::head(unique(fdc$value_text), 3), collapse = "/")))
+  n_ok <- n_ok && length(missing) == 0 && all(c("ecmwf_ifs025", "icon_seamless") %in% ens_models) &&
+    nrow(fdc) > 0
+}
+check("n", n_ok, "all email variables, ECMWF + ICON ensembles and BOM fire danger category archived")
+
+# ---- o. read-back of every source (follow-up 11) ------------------------------------------------
+
+section("o. read-back")
+o_ok <- TRUE
+for (s in sites@sites) {
+  for (src in live_cfg$forecast_sources) {
+    r <- tryCatch(met_forecast_archive(s, source = src), error = function(e) e)
+    ok <- !inherits(r, "error") && nrow(r) > 0 &&
+      all(abs(as.numeric(r$lead_time, units = "secs") -
+                as.numeric(difftime(r$valid_time, r$issue_time, units = "secs"))) < 1, na.rm = TRUE)
+    cat(sprintf("%s/%s: %s\n", site_id(s), src,
+                if (inherits(r, "error")) conditionMessage(r) else sprintf("%d rows", nrow(r))))
+    o_ok <- o_ok && ok
+  }
+  for (src in daily_cfg$obs_sources) {
+    r <- tryCatch(met_record(s, from = now_utc() - 30 * 86400, to = now_utc()), error = function(e) e)
+    ok <- !inherits(r, "error")
+    cat(sprintf("%s/record (%s): %s\n", site_id(s), src,
+                if (inherits(r, "error")) conditionMessage(r) else sprintf("%d rows", sum(r$source == src))))
+    o_ok <- o_ok && ok
+  }
+}
+check("o", o_ok, "every forecast source reads back with exact lead times; the record reads")
+
+# ---- p. met_wide models and stat (follow-up 10) ---------------------------------------------------
+
+section("p. met_wide() models and stat")
+p_ok <- tryCatch({
+  s <- sites@sites[[1]]
+  w_mean <- met_wide(s, win, source = "om_ens", variables = "temperature_2m")
+  w_p95 <- met_wide(s, win, source = "om_ens", variables = "temperature_2m", stat = "p95")
+  w_om <- met_wide(s, win, source = "openmeteo")
+  prov <- met_provenance(w_om)
+  cat("openmeteo models per variable:", paste(prov$variable, prov$model, sep = "=", collapse = ", "), "\n")
+  cat(sprintf("om_ens temperature_2m: mean %.1f, p95 %.1f degC (72 h average)\n",
+              mean(w_mean$temperature_2m), mean(w_p95$temperature_2m)))
+  all(w_p95$temperature_2m >= w_mean$temperature_2m) && met_provenance(w_p95)$stat == "p95" &&
+    length(unique(stats::na.omit(prov$model))) >= 2
+}, error = function(e) { cat("error:", conditionMessage(e), "\n"); FALSE })
+check("p", p_ok, "per-variable models in met_wide(); ensemble p95 >= mean")
+
 # ---- g. store size and growth ---------------------------------------------------------
 
 section("g. store size and growth")
@@ -368,13 +579,14 @@ per_source <- do.call(rbind, lapply(c("openmeteo", "om_ens", "bom_forecast"), fu
              issues = nrow(unique(d[c("site_id", "model", "issue_time")])),
              rows = nrow(d))
 }))
-# Issuances per day per site/model captured by an hourly sync:
-# Open-Meteo best_match and the ECMWF IFS ensemble run every 6 h (4/day);
-# BOM re-issues its web-API forecasts many times a day, so an hourly sync
-# captures up to 24/day for each of daily and hourly.
+# Issuances per day per site/model captured by an hourly sync: every
+# Open-Meteo model here (ECMWF IFS, GFS, ICON; ECMWF and ICON ensembles)
+# runs every 6 h (4/day) and is downloaded once per run; BOM re-issues its
+# web-API forecasts many times a day, so an hourly sync captures up to
+# 24/day for each of daily and hourly.
 per_day <- c(openmeteo = 4, om_ens = 4, bom_forecast = 24)
 per_source$bytes_per_issue <- per_source$bytes / per_source$issues
-per_source$issues_per_day <- per_day[per_source$source] * c(openmeteo = 2, om_ens = 2, bom_forecast = 4)[per_source$source] # sites x models
+per_source$issues_per_day <- per_day[per_source$source] * c(openmeteo = 6, om_ens = 4, bom_forecast = 4)[per_source$source] # sites x models
 per_source$mb_per_day <- per_source$bytes_per_issue * per_source$issues_per_day / 1024^2
 print(per_source, row.names = FALSE)
 other_bytes <- dir_bytes(root) - sum(per_source$bytes)
@@ -383,7 +595,7 @@ cat(sprintf("store after all runs: %s (forecasts %s, other tables %s)\n",
             mb(dir_bytes(root)), mb(sum(per_source$bytes)), mb(other_bytes)))
 cat(sprintf("live run 1 wrote %s; live run 2 wrote %s; daily run wrote %s\n",
             mb(bytes_live1), mb(bytes_live2 - bytes_live1), mb(bytes_daily)))
-cat(sprintf("estimated growth: ~%.0f MB/day (~%.1f GB/year) for hourly live + daily syncs of both sites, before store_compact()\n",
+cat(sprintf("estimated growth: ~%.0f MB/day (~%.1f GB/year) for hourly live + daily syncs of both sites, after met_compact()\n",
             growth, growth * 365 / 1024))
 check("g", is.finite(growth) && growth > 0, sprintf("store %s; ~%.0f MB/day", mb(dir_bytes(root)), growth))
 

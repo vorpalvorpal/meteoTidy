@@ -11,7 +11,8 @@ met_wide(
   variables = NULL,
   now = .now(),
   source = NULL,
-  model = NULL
+  model = NULL,
+  stat = "mean"
 )
 }
 \arguments{
@@ -29,8 +30,13 @@ full section 3.1 contract set (see SCOPING section 3.1).}
 
 \item{now}{Injectable current time; see \code{.now()}.}
 
-\item{source, model}{For \code{kind = "forecast"}: the archived source and
-model to serve (see Details). \code{NULL} picks the default.}
+\item{source, model}{For \code{kind = "forecast"}: the archived source, and
+the model precedence list (a single model, or several: each variable
+comes from the first that has it). \code{NULL} picks the default (see
+Details).}
+
+\item{stat}{For \code{kind = "forecast"}: \code{"mean"} (default), \code{"median"}, or
+a percentile \code{"p1"}..\code{"p99"} (see Details).}
 }
 \value{
 A \code{met_table}.
@@ -44,19 +50,36 @@ versions. \code{kind = "record"} reads the curated observation record
 forecast (\code{\link[=met_forecast_archive]{met_forecast_archive()}}) for prediction.
 }
 \details{
-For \code{kind = "forecast"}, exactly \strong{one source and one model} is served
--- never a mean across sources or models (which would blend, say, an
-Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
-product nobody issued). \code{source}/\code{model} choose it; by default the
-archive's only source (or \code{"openmeteo"} when there are several) and that
-source's only model (or \code{"best_match"}, then \code{"hourly"}, when there are
-several). Of that source/model, only the \strong{latest archived issuance} is
-served: the archive holds every past issuance overlapping the window
-(SCOPING section 9's archive-on-every-sync policy). Ensemble members
-within that issuance are reported as the ensemble mean; per-member
-trajectories remain available via \code{\link[=met_forecast_archive]{met_forecast_archive()}}. A variable
-published only as quantiles (BOM's hourly rain) is served as its
-median (\code{p50}).
+For \code{kind = "forecast"}, \strong{one source} is served, and \strong{each variable
+comes from one model} -- never a mean across sources or models (which
+would blend, say, an Open-Meteo run, an ECMWF ensemble and BOM's edited
+forecast into a product nobody issued). \code{source} chooses the source: by
+default the archive's only source, or \code{"openmeteo"} when there are
+several. \code{model} is a precedence list: each variable is served from the
+first listed model that has any value for it in the window (no single
+Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
+height or soil moisture). By default it is the source's only model, or
+else \code{"ecmwf_ifs025"}, \code{"gfs_global"}, \code{"icon_global"}, \code{"best_match"},
+\code{"icon_seamless"}, \code{"hourly"} in that order. A model whose latest
+archived run is more than a day (option \code{meteoTidy.wide_stale_hours},
+default 24) behind the newest run of the other listed models -- one no
+longer fetched, such as \code{best_match} after the move to named models --
+drops behind every current model, so it only serves variables no current
+model has; named alone it is served as is. \code{\link[=met_provenance]{met_provenance()}} records
+the \code{model} and \code{stat} behind each column. Of each model, only the
+\strong{latest archived issuance} is served: the archive holds every past
+issuance overlapping the window (SCOPING section 9's archive-on-every-sync
+policy); per-member trajectories and older issuances remain available via
+\code{\link[=met_forecast_archive]{met_forecast_archive()}}.
+
+\code{stat} picks the statistic. \code{"mean"} (default): the ensemble mean across
+members, a deterministic run's value as is, and for a variable published
+only as quantiles (BOM's hourly rain) its median (\code{p50}). \code{"pNN"} (e.g.
+\code{"p95"}; \code{"median"} = \code{"p50"}): the NN-th percentile across ensemble
+members, or the product's own published percentile (BOM publishes rain
+\code{p50}, \code{p75} and \code{p90}, i.e. the 50/25/10 \% chance amounts), or a
+deterministic value as is (provenance \code{stat = "deterministic"}); \code{NA} if
+the product has none of those.
 
 meteoHazard contract: \code{wind_gusts_10m} is never below \code{wind_speed_10m}
 in any row (gusts are raised to the mean wind where a product's own

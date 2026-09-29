@@ -37,12 +37,15 @@ TIER_LEVELS <- c("raw", "physical", "mean_bias", "qmap", "emos")
 
 #' Statistical-class levels
 #'
-#' Drives QC and correction dispatch (SCOPING §3, §6).
+#' Drives QC and correction dispatch (SCOPING §3, §6). `"categorical"` is a
+#' code, not a quantity (e.g. `weather_code`, `is_day`): never averaged,
+#' interpolated or checked against a climatology; hourly aggregation keeps
+#' the highest code (WMO weather codes rise with severity).
 #'
 #' @family enums
 #' @export
 STAT_CLASS_LEVELS <- c(
-  "linear", "circular", "bounded", "intermittent", "clear_sky_indexed"
+  "linear", "circular", "bounded", "intermittent", "clear_sky_indexed", "categorical"
 )
 
 #' Measurability-class levels

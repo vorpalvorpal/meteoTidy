@@ -63,19 +63,37 @@
 #' written (idempotency: re-running a sync must not duplicate rows or create
 #' audit noise).
 #'
+#' `compare_qc_flag = FALSE` is for ACQUISITION writes (a re-fetch of a
+#' source's raw readings, which always arrive flagged by the adapter, usually
+#' `"ok"`): a row is then "unchanged" when its `value` and `method` match,
+#' whatever its flag, so QC's earlier verdict on the stored row is kept.
+#' Comparing the raw flag against QC's "suspect" superseded identical
+#' readings on every hourly sync (follow-up review, item 4). QC and fill
+#' writes keep the default (`TRUE`): a flag change is exactly what they
+#' record.
+#'
 #' @param store_root Root directory of the store.
 #' @param obs A canonical observation tibble (see `new_obs()`).
 #' @param now Injectable current time; see `.now()`.
 #' @param mode Either `"append"` or `"supersede"`.
+#' @param compare_qc_flag Logical; whether a differing `qc_flag` alone makes
+#'   an incoming row a revision (see Details).
 #' @return Invisibly, a list `(n_new, n_superseded, n_unchanged)`.
 #' @keywords internal
 #' @noRd
-store_write_obs <- function(store_root, obs, now = .now(), mode = c("append", "supersede")) {
+store_write_obs <- function(store_root, obs, now = .now(), mode = c("append", "supersede"),
+                            compare_qc_flag = TRUE) {
   mode <- rlang::arg_match(mode)
-  with_store_lock(store_root, .store_write_obs_impl(store_root, obs, now = now, mode = mode))
+  with_store_lock(store_root, .store_write_obs_impl(store_root, obs, now = now, mode = mode,
+                                                    compare_qc_flag = compare_qc_flag))
 }
 
-.store_write_obs_impl <- function(store_root, obs, now, mode) {
+# Element-wise equality treating NA == NA as equal (and NA != value).
+.same_value <- function(a, b) {
+  (is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b)
+}
+
+.store_write_obs_impl <- function(store_root, obs, now, mode, compare_qc_flag = TRUE) {
   obs <- new_obs(obs)
 
   if (nrow(obs) == 0) {
@@ -114,9 +132,12 @@ store_write_obs <- function(store_root, obs, now = .now(), mode = c("append", "s
       identical_mask <- rep(FALSE, nrow(inc))
       if (any(has_match)) {
         m <- match_idx[has_match]
-        identical_mask[has_match] <- current$value[m] == inc$value[has_match] &
-          current$qc_flag[m] == inc$qc_flag[has_match] &
+        same <- .same_value(current$value[m], inc$value[has_match]) &
           current$method[m] == inc$method[has_match]
+        if (compare_qc_flag) {
+          same <- same & current$qc_flag[m] == inc$qc_flag[has_match]
+        }
+        identical_mask[has_match] <- same
       }
 
       to_write <- inc[!identical_mask, , drop = FALSE]

@@ -104,7 +104,7 @@ describe("item 1c: met_sync_live no longer computes-and-discards corrections", {
     testthat::local_mocked_bindings(
       qc_run = function(...) invisible(),
       fill_run = function(...) invisible(),
-      archive_forecasts = function(...) tibble::tibble(note = "ok"),
+      archive_forecasts = archived_ok,
       correct_apply = function(...) stop("correct_apply must not be called by met_sync_live")
     )
     expect_no_error(

@@ -41,3 +41,11 @@ mock_acquisition <- function(calls = new.env(),
   )
   calls
 }
+
+# Stand-in for archive_forecasts() with its real return shape: one source
+# status row per forecast source, each archived "ok".
+archived_ok <- function(store_root, site, sources, ...) {
+  out <- .source_status_row("forecast", sources, "ok", 0L)
+  out$note <- rep("archived", nrow(out))
+  out
+}

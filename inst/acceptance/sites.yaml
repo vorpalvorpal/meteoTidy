@@ -35,14 +35,13 @@ sites:
         api_key_env: SILO_API_KEY
       openmeteo:
         adapter: openmeteo
-        product: forecast      # best_match, 16-day horizon
+        product: forecast      # ECMWF IFS, GFS, ICON (named runs), 16 days
       om_ens:
         adapter: openmeteo
-        product: ensemble
-        models: [ecmwf_ifs025] # 51 members, 15-day horizon
+        product: ensemble      # ECMWF IFS (51 members, 15 d) + ICON-EPS (40, 7.5 d)
       bom_forecast:
         adapter: bom_forecast
-        allow_web_api: true    # daily (précis rung first) + hourly
+        allow_web_api: true    # daily (geohash web API first, précis fallback) + hourly
   - site_id: blax
     latitude: -33.73
     longitude: 150.61
@@ -74,7 +73,6 @@ sites:
       om_ens:
         adapter: openmeteo
         product: ensemble
-        models: [ecmwf_ifs025]
       bom_forecast:
         adapter: bom_forecast
         allow_web_api: true

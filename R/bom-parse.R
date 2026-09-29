@@ -137,8 +137,10 @@
     )
   }
   periods <- xml2::xml_find_all(area, ".//forecast-period")
+  location <- sprintf("%s (BOM precis area %s)", xml2::xml_attr(area, "description"),
+                      xml2::xml_attr(area, "aac"))
 
-  list(issue_time = issue_time, periods = periods)
+  list(issue_time = issue_time, periods = periods, location = location)
 }
 
 # Start of a forecast period in UTC (prefer the explicit UTC attribute).
@@ -163,7 +165,9 @@
 #' `precipitation_range` ("0 to 8 mm") -> `precipitation_sum` with
 #' `stat = "p50"` (the lower bound: BOM's 50 % chance amount) and
 #' `stat = "p75"` (the upper bound: BOM's 25 % chance amount). Rows carry
-#' `model = "daily"`.
+#' `model = "daily_precis"`: the précis is a town forecast (for Blaxland,
+#' Springwood's), so it is kept apart from the site's own web-API
+#' `model = "daily"` forecast.
 #'
 #' @param xml An `xml2` document/node, or a raw XML string.
 #' @param site_id,source Stamped on every row.
@@ -186,7 +190,7 @@ bom_parse_precis_forecast <- function(xml, site_id, source = "bom_forecast", aac
     }
     pop <- sub("%", "", .bom_precis_element(period, "probability_of_precipitation"), fixed = TRUE)
     mk <- function(variable, value, stat = NA_character_) {
-      .bom_fc_rows(site_id, source, "daily", issue_time, valid, variable, value, stat)
+      .bom_fc_rows(site_id, source, "daily_precis", issue_time, valid, variable, value, stat)
     }
     .bom_bind_fc(list(
       mk("temperature_2m_min", .bom_precis_element(period, "air_temperature_minimum")),
@@ -204,7 +208,9 @@ bom_parse_precis_forecast <- function(xml, site_id, source = "bom_forecast", aac
 #' Every `<text type="...">` of the site's area's periods becomes one
 #' `forecast_aux` row (`field` = the `type`: `"precis"`, `"forecast"`,
 #' `"fire_danger"`, `"uv_alert"`, `"probability_of_precipitation"`, ...),
-#' verbatim.
+#' verbatim. One extra row, `field = "location"` (valid at the issue time),
+#' names the précis area the forecast is for, e.g.
+#' `"Springwood (BOM precis area NSW_PT129)"`.
 #'
 #' @inheritParams bom_parse_precis_forecast
 #' @return A canonical forecast_aux tibble.
@@ -228,7 +234,8 @@ bom_parse_precis_aux <- function(xml, site_id, source = "bom_forecast", aac = NU
       value_text = vapply(texts, xml2::xml_text, character(1))
     )
   })
-  .bom_bind_aux(rows)
+  location <- .bom_aux_rows(site_id, source, issue_time, issue_time, "location", parts$location)
+  .bom_bind_aux(c(list(location), rows))
 }
 
 # ---- web API daily / hourly forecast JSON ------------------------------
@@ -277,14 +284,25 @@ bom_parse_webapi_daily <- function(body, site_id, source = "bom_forecast") {
 #' Parse a BOM web-API daily forecast into forecast_aux rows
 #'
 #' Fields: `precis` (`short_text`), `forecast` (`extended_text`),
-#' `fire_danger`, `uv_category`, `chance_of_no_rain_category`, `icon`.
+#' `fire_danger`, `fire_danger_category` (the AFDRS rating text), `uv_category`, `chance_of_no_rain_category`, `icon`; plus
+#' one `location` row (valid at the issue time) naming the geohash and BOM's
+#' forecast region for it, e.g. `"geohash r65050 (BOM forecast region
+#' Penrith)"`.
+#' @param geohash The 6-character geohash the forecast was requested for.
 #' @keywords internal
 #' @noRd
-bom_parse_webapi_daily_aux <- function(body, site_id, source = "bom_forecast") {
+bom_parse_webapi_daily_aux <- function(body, site_id, source = "bom_forecast", geohash = NA) {
   parsed <- .bom_as_parsed_json(body)
   issue_time <- .bom_webapi_issue_time(parsed)
+  region <- .bom_get(parsed, "metadata", "forecast_region")
+  location <- .bom_aux_rows(
+    site_id, source, issue_time, issue_time, "location",
+    paste0(if (!is.na(geohash)) paste("geohash", geohash) else "BOM web API",
+           if (!is.na(region)) sprintf(" (BOM forecast region %s)", region) else "")
+  )
   fields <- list(
     precis = "short_text", forecast = "extended_text", fire_danger = "fire_danger",
+    fire_danger_category = c("fire_danger_category", "text"),
     uv_category = c("uv", "category"),
     chance_of_no_rain_category = c("rain", "chance_of_no_rain_category"),
     icon = "icon_descriptor"
@@ -295,7 +313,7 @@ bom_parse_webapi_daily_aux <- function(body, site_id, source = "bom_forecast") {
       .bom_aux_rows(site_id, source, issue_time, valid, f, .bom_get(d, fields[[f]]))
     })
   })
-  .bom_bind_aux(unlist(rows, recursive = FALSE))
+  .bom_bind_aux(c(list(location), unlist(rows, recursive = FALSE)))
 }
 
 #' Parse a BOM web-API hourly forecast into canonical forecast rows

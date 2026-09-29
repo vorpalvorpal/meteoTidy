@@ -68,6 +68,8 @@ store_write_forecast_aux <- function(store_root, aux, now = .now()) {
     return(invisible(df))
   }
 
+  df <- .whole_second_times(df)
+
   issue_date <- .forecast_issue_date(df$issue_time)
   part_key <- paste(df$source, df$site_id, issue_date, sep = "\r")
 
@@ -87,7 +89,7 @@ store_write_forecast_aux <- function(store_root, aux, now = .now()) {
     }
 
     if (nrow(rows) == 0) next
-    .write_part(dir, rows)
+    .write_part(dir, .lead_in_seconds(rows))
   }
 
   invisible(df)
@@ -138,7 +140,7 @@ store_read_forecast <- function(store_root, site_id, source = NULL,
   if (nrow(out) == 0) {
     return(out)
   }
-  new_forecast(out)
+  new_forecast(.repair_stored_lead(out))
 }
 
 #' Read forecast_aux rows from the store
@@ -224,4 +226,46 @@ store_read_forecast_aux <- function(store_root, site_id, source = NULL,
   }
 
   out
+}
+
+# Forecast times are stored in whole seconds (follow-up review, item 11).
+# A wall-clock issue_time carries microseconds, and Parquet's duration[s]
+# truncates: a lead held in HOURS (e.g. 30649 s = 8.513611... h) is
+# multiplied back to 30648.9999... s and stored as 30648 s, so about one lead
+# in 24 read back a second short and new_forecast() rejected the archive.
+# So: round issue_time and valid_time to the nearest second, recompute
+# lead_time from them, and hand Parquet an exact whole-second difftime.
+.whole_second_times <- function(df) {
+  snap <- function(x) {
+    .POSIXct(round(as.numeric(x)), tz = "UTC")
+  }
+  df$issue_time <- snap(df$issue_time)
+  df$valid_time <- snap(df$valid_time)
+  if ("lead_time" %in% names(df)) {
+    has_lead <- !is.na(df$lead_time)
+    lead <- as.numeric(difftime(df$valid_time, df$issue_time, units = "secs"))
+    lead[!has_lead] <- NA_real_
+    df$lead_time <- as.difftime(lead / 3600, units = "hours")
+  }
+  df
+}
+
+# The column as Parquet should see it: seconds, so duration[s] is exact.
+.lead_in_seconds <- function(df) {
+  if ("lead_time" %in% names(df)) {
+    df$lead_time <- as.difftime(round(as.numeric(df$lead_time, units = "secs")), units = "secs")
+  }
+  df
+}
+
+# Stores written before the fix hold leads truncated by up to a second (and
+# possibly a fractional issue_time). Recompute such leads from the times on
+# read; a lead off by 2 s or more is left for new_forecast() to reject.
+.repair_stored_lead <- function(df) {
+  exact <- as.numeric(difftime(df$valid_time, df$issue_time, units = "secs"))
+  stored <- as.numeric(df$lead_time, units = "secs")
+  fix <- !is.na(stored) & abs(stored - exact) < 2
+  stored[fix] <- round(exact[fix])
+  df$lead_time <- as.difftime(stored, units = "secs")
+  df
 }
