@@ -172,6 +172,6 @@ ingest_aws_export <- function(store_root, site, path, source_id = "site_aws",
 
   fetched <- fetch(adapter, site, adapter@provides,
                    window = list(from = NULL, to = now), now = now)
-  store_write_obs(store_root, fetched, now = now, mode = "supersede")
+  store_write_obs(store_root, fetched, now = now, mode = "supersede", compare_qc_flag = FALSE)
   invisible(fetched)
 }
