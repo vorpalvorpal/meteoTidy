@@ -1,4 +1,4 @@
-# meteoTidy (development version)
+# meteoTidy 0.0.0.9000 (development version)
 
 Production archiving for hourly `met_sync_live()` and daily `met_sync_daily()` runs:
 
