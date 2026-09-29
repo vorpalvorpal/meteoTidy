@@ -132,8 +132,12 @@ NULL
 # for the whole site, the per-site status table, logging, and fail_on.
 .run_sync_verb <- function(verb, sites, config, fail_on, site_fn) {
   status <- for_each_site(sites, function(site) {
-    with_store_lock(config$store_root %||% site_store_root(site),
-                    site_fn(site), timeout = config$lock_timeout)
+    store_root <- config$store_root %||% site_store_root(site)
+    # Fail the site up front (status "error") rather than half-writing it
+    # when its paths could exceed the Windows limit (follow-up item 1).
+    .check_store_paths(store_root, site_id(site),
+                       c(config$obs_sources, config$forecast_sources))
+    with_store_lock(store_root, site_fn(site), timeout = config$lock_timeout)
   }, on_error = "isolate")
 
   ok <- status$status == "ok"

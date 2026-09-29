@@ -60,44 +60,170 @@ dataset_path <- function(store_root, table, parts, create = FALSE) {
 }
 
 # A fresh, collision-resistant part-file name for appending to a partition.
-# Uses only a process id + an in-session counter + random suffix -- no wall
-# clock read, per house style (`.now()` is the package's sole clock reader).
-.part_file_counter <- local({
-  i <- 0L
-  function() {
-    i <<- i + 1L
-    i
-  }
-})
-
-.part_file_name <- function() {
+# Kept SHORT (follow-up review, item 1): Windows cannot open paths longer
+# than 259 characters, and the hive partition directories already take ~70
+# of them, so the old 34-39 character names ("part-<pid>-<n>-<12>.parquet",
+# temp files with a ".tmp-" prefix) pushed real stores over the limit.
+# Writers hold the store lock, and .write_part() never overwrites an existing
+# file, so 10 random characters (36^10) are ample. Temp files start with a
+# dot, which arrow datasets ignore. No wall clock is read (house style).
+.part_file_name <- function(tmp = FALSE) {
   paste0(
-    "part-", Sys.getpid(), "-", .part_file_counter(), "-",
-    paste(sample(c(letters, 0:9), 12, replace = TRUE), collapse = ""),
+    if (tmp) ".t" else "p-",
+    paste(sample(c(letters, 0:9), 10, replace = TRUE), collapse = ""),
     ".parquet"
   )
 }
 
-# Write `df` as a new Parquet part-file inside `dir` (created if needed).
+# A part-file path in `dir` that does not exist yet.
+.new_part_path <- function(dir, tmp = FALSE) {
+  repeat {
+    path <- file.path(dir, .part_file_name(tmp = tmp))
+    if (!file.exists(path)) {
+      return(path)
+    }
+  }
+}
+
+# ---- Windows path-length guard (follow-up review, item 1) --------------------
+
+# The longest path Windows opens without the LongPathsEnabled policy.
+.max_windows_path <- function() 259L
+
+# The budget planned store paths must fit in: a margin under the hard limit.
+.store_path_budget <- function() {
+  getOption("meteoTidy.max_store_path", 250L)
+}
+
+# The full long-form spelling of `path`, as arrow and Windows will open it:
+# 8.3 short names (C:/Users/KATOOM~1/...) are expanded, so a path that looks
+# short enough can still be too long. `path` need not exist; its deepest
+# existing ancestor is normalised and the rest appended.
+.long_form_path <- function(path) {
+  path <- gsub("\\\\", "/", path)
+  tail <- character(0)
+  head <- path
+  while (!dir.exists(head) && !file.exists(head)) {
+    parent <- dirname(head)
+    if (identical(parent, head)) break
+    tail <- c(basename(head), tail)
+    head <- parent
+  }
+  head <- normalizePath(head, winslash = "/", mustWork = FALSE)
+  if (length(tail)) do.call(file.path, as.list(c(head, tail))) else head
+}
+
+# Abort (class "store_path_too_long") if `path` cannot be opened on Windows.
+.check_path_length <- function(path) {
+  full <- .long_form_path(path)
+  limit <- .max_windows_path()
+  if (.Platform$OS.type == "windows" && nchar(full) > limit) {
+    abort_meteo(
+      c(
+        "Store path is too long for Windows ({nchar(full)} characters; the limit is {limit}).",
+        "x" = "{.path {full}}",
+        "i" = "Use a shorter {.field store_root} (e.g. {.path C:/meteo/store})."
+      ),
+      class = "store_path_too_long"
+    )
+  }
+  invisible(full)
+}
+
+# The longest path a sync of `site_ids` x `sources` can write under
+# `store_root`: every partitioned table plus the longest part-file name.
+.planned_max_path <- function(store_root, site_ids, sources) {
+  root <- .long_form_path(store_root)
+  sources <- c(sources, "")
+  name <- nchar(.part_file_name(tmp = TRUE)) + 1L
+  per_site <- vapply(site_ids, function(sid) {
+    max(
+      nchar(file.path(root, "observations", paste0("site_id=", sid), "year=2026")),
+      nchar(file.path(root, "forecast_aux", paste0("source=", sources),
+                      paste0("site_id=", sid), "issue_date=2026-01-01")),
+      nchar(file.path(root, "verification_diagnostics", paste0("site_id=", sid))),
+      nchar(file.path(root, "obs_transport", paste0("site_id=", sid))),
+      nchar(file.path(root, "qc_log", paste0("site_id=", sid)))
+    )
+  }, integer(1))
+  max(per_site) + name
+}
+
+# Refuse to start a sync whose store paths could exceed the Windows limit:
+# failing up front beats a run that writes some partitions and not others.
+.check_store_paths <- function(store_root, site_ids, sources) {
+  planned <- .planned_max_path(store_root, site_ids, sources)
+  budget <- .store_path_budget()
+  limit <- .max_windows_path()
+  if (planned > budget) {
+    root <- .long_form_path(store_root)
+    abort_meteo(
+      c(
+        "{.field store_root} is too long: store paths would reach {planned} characters (budget {budget}; Windows cannot open more than {limit}).", # nolint: line_length_linter.
+        "x" = "{.path {root}} is {nchar(root)} characters.",
+        "i" = "Use a store_root of at most {nchar(root) - (planned - budget)} characters (e.g. {.path C:/meteo/store})."
+      ),
+      class = "store_path_too_long"
+    )
+  }
+  invisible(planned)
+}
+
+# Re-open a just-written part file the way readers will (arrow expands the
+# path to its long form) and check its row count, so a write that cannot be
+# read back is an error rather than a silent loss.
+.verify_part <- function(path, n) {
+  got <- tryCatch({
+    # Close the handle explicitly: an open file cannot be renamed or removed
+    # on Windows.
+    f <- arrow::ReadableFile$create(.long_form_path(path))
+    on.exit(f$close(), add = TRUE)
+    arrow::ParquetFileReader$create(f)$num_rows
+  }, error = function(e) conditionMessage(e))
+  if (!is.numeric(got) || got != n) {
+    detail <- if (is.numeric(got)) sprintf("%d rows read back, %d written", as.integer(got), as.integer(n)) else got
+    detail <- gsub("([{}])", "\\1\\1", .one_line(detail))
+    abort_meteo(
+      c("A store write could not be verified: {.path {path}}.", "x" = detail),
+      class = "store_write_unverified"
+    )
+  }
+  invisible(path)
+}
+
+# Write `df` as a new Parquet part-file inside `dir` (created if needed) and
+# verify it reads back.
 .write_part <- function(dir, df) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-  path <- file.path(dir, .part_file_name())
+  path <- .new_part_path(dir)
+  .check_path_length(path)
   arrow::write_parquet(df, path)
+  .verify_part(path, nrow(df))
   invisible(path)
 }
 
 # Atomically replace the contents of a partition directory with a single
-# file containing `df`. Writes to a temp file in the *same* directory (so the
-# rename is on the same filesystem and therefore atomic), then removes the
-# old part-files and moves the temp file into place. Used by both the
-# supersede rewrite path (store-obs.R) and store_compact().
+# file containing `df`. Writes a verified temp file in the *same* directory
+# (so the rename is on the same filesystem and therefore atomic), renames it
+# into place, verifies it again, and only then removes the old part-files.
+# Any failure leaves the old files untouched (and removes the temp file).
+# Used by the supersede rewrite path (store-obs.R) and store_compact().
 .atomic_rewrite_partition <- function(dir, df) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-  tmp <- file.path(dir, paste0(".tmp-", .part_file_name()))
-  arrow::write_parquet(df, tmp)
+  tmp <- .new_part_path(dir, tmp = TRUE)
+  final <- .new_part_path(dir)
+  .check_path_length(tmp)
+  .check_path_length(final)
   old <- list.files(dir, pattern = "\\.parquet$", full.names = TRUE)
-  final <- file.path(dir, .part_file_name())
-  file.rename(tmp, final)
+  done <- FALSE
+  on.exit(if (!done) unlink(c(tmp, if (file.exists(final) && !(final %in% old)) final)), add = TRUE)
+  arrow::write_parquet(df, tmp)
+  .verify_part(tmp, nrow(df))
+  if (!isTRUE(suppressWarnings(file.rename(tmp, final)))) {
+    abort_meteo("Could not move {.path {tmp}} into place.", class = "store_write_unverified")
+  }
+  .verify_part(final, nrow(df))
+  done <- TRUE
   # Remove the old part-files only after the new one is safely in place.
   unlink(setdiff(old, final))
   invisible(final)

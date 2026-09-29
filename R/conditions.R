@@ -207,7 +207,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_error_silo_bad_request",
       "meteoTidy_error_silo_failed",
       "meteoTidy_error_openmeteo_run_unknown",
-      "meteoTidy_warning_source_stale"
+      "meteoTidy_warning_source_stale",
+      "meteoTidy_error_store_path_too_long",
+      "meteoTidy_error_store_write_unverified"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -294,7 +296,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "SILO refused the request as invalid (\"Sorry, your request contains invalid values\").",
       "A SILO request failed for another reason (message has the API key redacted).",
       "The run time of a named Open-Meteo model could not be read from its metadata; the fetch is refused rather than mislabelled.",
-      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale)."
+      "A source returned data but its newest reading is older than its staleness limit (rows kept; the sync records the source as stale).",
+      "A store path (or the planned paths under a store_root) would exceed what Windows can open (259 characters).",
+      "A part file just written to the store could not be read back with the expected row count."
     ),
     stringsAsFactors = FALSE
   )
