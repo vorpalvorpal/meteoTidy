@@ -4,29 +4,18 @@ Task: `C:\Users\KatoombaWMF\dev\meteoTidy_prompt.md` (problems 1–12 + Definiti
 Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NOT merge.
 
 ## Current state
-- Committed: fix(1) lead_time, fix(9) filelock, fix(2,3,6) Open-Meteo, fix(4) BOM forecast.
-- UNCOMMITTED, in progress (finish → test → commit):
-  - Problem 11 eagle.io: `R/source-eagleio.R` written; YAML kind `eagleio` wired in `R/adapter.R`;
-    condition classes `source_stale`, `eagleio_node_empty` registered. Tests (written by a separate
-    test-writer agent, from spec) in `tests/testthat/test-regress-11-eagleio.R`: 64 pass; only the
-    export test fails, which needs `devtools::document()` (NAMESPACE export for `source_eagleio`).
-  - Problem 5 BOM obs: `R/source-bom-obs.R` rungs rewritten (URL `IDN60901/IDN60901.<wmo>.json`,
-    `resolved: bom: wmo:` + optional `obs_product:` (alias `product`), web API uses 6-char geohash
-    + UA header, breaker persisted on failure); `R/bom-parse.R` obs parsers rewritten (gust, dewpt,
-    press_msl, nulls/CALM skipped, web API single-object shape via metadata.observation_time).
-    New fixtures: `_fixtures/bom/obs72h-IDN60901-{94743,94763}.json`, `webapi-obs-{r64bhq,r65050}.json`.
-    TODO: write `test-regress-05-bom-obs.R` (fails on old code), update `test-source-bom-obs.R`
-    test 1 to set `resolved bom wmo`, run the full suite, commit.
-- Last full suite (before 5/11): 1036 pass / 0 fail / 3 skip.
-
+- Committed: 1, 9, 2/3/6, 4, 5, 11, 7/10. Full suite 1138 pass / 0 fail / 3 skip.
+- Sync verbs now return site_id/status/message/sources(list-col); fail_on arg; stderr log line;
+  per-site store lock (config$lock_timeout). Tests set options(meteoTidy.sync_log = FALSE) in setup.R.
+- NEXT: problem 8 (met_wide), then 12 (SILO), then acceptance/docs/check/PR.
 ## Pending (in order)
 - [x] 1  lead_time whole seconds
 - [x] 9  filelock + read-dedup
 - [x] 2/3/6 Open-Meteo
 - [x] 4  BOM forecast (daily précis/web API + hourly web API, model "daily"/"hourly", aux)
-- [ ] 5  BOM obs (in progress, see above)
-- [ ] 11 eagleio (in progress, see above)
-- [ ] 7/10 archive_forecasts per-source isolation (tryCatch per source, record note/status), hold
+- [x] 5  BOM obs (wmo + obs_product in resolved.bom)
+- [x] 11 eagleio (source_eagleio; source_stale)
+- [x] 7/10 archive_forecasts per-source isolation (tryCatch per source, record note/status), hold
         `with_store_lock(config$store_root, ...)` per site in sync verbs (config$lock_timeout),
         per-source status column(s) in the met_sync_* result, `fail_on = c("none","any","all")`
         → abort (class e.g. `sync_failed`) so Rscript exits non-zero; one stderr line per site/source

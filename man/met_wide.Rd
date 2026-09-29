@@ -9,7 +9,9 @@ met_wide(
   window,
   kind = c("forecast", "record"),
   variables = NULL,
-  now = .now()
+  now = .now(),
+  source = NULL,
+  model = NULL
 )
 }
 \arguments{
@@ -26,6 +28,9 @@ variable appears as a column even if absent from the underlying data
 full section 3.1 contract set (see SCOPING section 3.1).}
 
 \item{now}{Injectable current time; see \code{.now()}.}
+
+\item{source, model}{For \code{kind = "forecast"}: the archived source and
+model to serve (see Details). \code{NULL} picks the default.}
 }
 \value{
 A \code{met_table}.
@@ -39,13 +44,24 @@ versions. \code{kind = "record"} reads the curated observation record
 forecast (\code{\link[=met_forecast_archive]{met_forecast_archive()}}) for prediction.
 }
 \details{
-For \code{kind = "forecast"}, only the \strong{latest archived issuance} per
-\verb{(source, model)} is served: the archive holds every past issuance
-overlapping the window (SCOPING section 9's archive-on-every-sync
-policy), and pooling them would average the current forecast with stale
-ones. Ensemble members within that issuance are reported as the ensemble
-mean; per-member trajectories remain available via
-\code{\link[=met_forecast_archive]{met_forecast_archive()}}.
+For \code{kind = "forecast"}, exactly \strong{one source and one model} is served
+-- never a mean across sources or models (which would blend, say, an
+Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
+product nobody issued). \code{source}/\code{model} choose it; by default the
+archive's only source (or \code{"openmeteo"} when there are several) and that
+source's only model (or \code{"best_match"}, then \code{"hourly"}, when there are
+several). Of that source/model, only the \strong{latest archived issuance} is
+served: the archive holds every past issuance overlapping the window
+(SCOPING section 9's archive-on-every-sync policy). Ensemble members
+within that issuance are reported as the ensemble mean; per-member
+trajectories remain available via \code{\link[=met_forecast_archive]{met_forecast_archive()}}. A variable
+published only as quantiles (BOM's hourly rain) is served as its
+median (\code{p50}).
+
+meteoHazard contract: \code{wind_gusts_10m} is never below \code{wind_speed_10m}
+in any row (gusts are raised to the mean wind where a product's own
+values disagree), and \code{shortwave_radiation} is derived as
+\code{direct_radiation + diffuse_radiation} when not archived itself.
 }
 \examples{
 \dontrun{
