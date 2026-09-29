@@ -4,10 +4,13 @@ Task: `C:\Users\KatoombaWMF\dev\meteoTidy_prompt.md` (problems 1–12 + Definiti
 Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NOT merge.
 
 ## Current state
-- Committed: 1, 9, 2/3/6, 4, 5, 11, 7/10. Full suite 1138 pass / 0 fail / 3 skip.
-- Sync verbs now return site_id/status/message/sources(list-col); fail_on arg; stderr log line;
+- PAUSED at user request after committing fix(8) (1fc880b). Working tree clean.
+- Committed: 1, 9, 2/3/6, 4, 5, 11, 7/10, 8. Full suite 1154 pass / 0 fail / 3 skip.
+- Sync verbs return site_id/status/message/sources(list-col); fail_on arg; stderr log line;
   per-site store lock (config$lock_timeout). Tests set options(meteoTidy.sync_log = FALSE) in setup.R.
-- NEXT: problem 8 (met_wide), then 12 (SILO), then acceptance/docs/check/PR.
+- met_wide(source=, model=): defaults only-source else openmeteo; only-model else best_match, hourly.
+  Gust>=wind enforced; shortwave_radiation in contract (direct+diffuse fallback).
+- NEXT: problem 12 (SILO), then acceptance script / docs / NEWS / check / live run / PR.
 ## Pending (in order)
 - [x] 1  lead_time whole seconds
 - [x] 9  filelock + read-dedup
@@ -20,7 +23,7 @@ Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NO
         per-source status column(s) in the met_sync_* result, `fail_on = c("none","any","all")`
         → abort (class e.g. `sync_failed`) so Rscript exits non-zero; one stderr line per site/source
         (message()/cli to stderr). Test: bad-URL source + good source; Rscript exit code via callr/system2.
-- [ ] 8  met_wide: `source`/`model` args (default openmeteo/best_match, no pooling), use p50/mean
+- [x] 8  met_wide: `source`/`model` args (default openmeteo/best_match, no pooling), use p50/mean
         stat when no deterministic rows, filter to requested variables before building time base,
         enforce gusts >= wind after aggregation, add shortwave_radiation to .met31_variables
         (or compute direct+diffuse). Provenance names the chosen source.
