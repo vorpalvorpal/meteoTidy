@@ -21,54 +21,37 @@ NULL
   config$refetch_windows[[source]] %||% .default_refetch_window()
 }
 
-# Run the daily sync for one site.
+# Run the daily sync for one site. Every source is isolated (problem 7 of
+# the production review: archive_forecasts() used to run first, unwrapped,
+# so one dead forecast feed skipped every obs source, QC/fill and history).
 .met_sync_daily_site <- function(site, now, config) {
   store_root <- config$store_root
   sid <- site_id(site)
-  degraded <- FALSE
-  messages <- character(0)
 
-  archive_forecasts(store_root, site, config$forecast_sources, now = now)
-
-  for (source in config$obs_sources) {
+  obs_status <- lapply(config$obs_sources, function(source) {
     refetch <- .refetch_window_for(config, source)
     window <- store_effective_fetch_window(store_root, sid, "observations", source,
                                            refetch = refetch, now = now)
-
-    result <- rlang::try_fetch(
-      {
-        obs <- .acquire_obs(source, site, window, now = now)
-        if (nrow(obs) > 0) {
-          store_write_obs(store_root, obs, now = now, mode = "supersede")
-          if ("transport" %in% names(obs)) {
-            transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
-            obs_transport_write(store_root, obs[transport_cols], now = now)
-          }
-        }
-        NULL
-      },
-      error = function(cnd) cnd
-    )
-    if (!is.null(result)) {
-      degraded <- TRUE
-      messages <- c(messages, sprintf("%s: %s", source, conditionMessage(result)))
-      next
-    }
-
-    store_set_watermark(store_root, sid, "observations", source, now)
-  }
-
-  qc_run(store_root, site, variables = NULL, now = now)
-  fill_run(store_root, site, variables = NULL, now = now)
+    .run_source("obs", source, {
+      n <- .sync_write_obs(store_root, .acquire_obs(source, site, window, now = now), now)
+      store_set_watermark(store_root, sid, "observations", source, now)
+      n
+    })
+  })
 
   history_window <- list(from = now - as.difftime(30, units = "days"), to = now)
-  build_history_hourly(store_root, site, history_window)
-  build_history_daily(store_root, site, history_window)
-
-  list(
-    status = if (degraded) "degraded" else "ok",
-    message = if (length(messages) > 0) paste(messages, collapse = "; ") else NA_character_
+  step_errors <- c(
+    .sync_step("qc", qc_run(store_root, site, variables = NULL, now = now)),
+    .sync_step("fill", fill_run(store_root, site, variables = NULL, now = now)),
+    .sync_step("history_hourly", build_history_hourly(store_root, site, history_window)),
+    .sync_step("history_daily", build_history_daily(store_root, site, history_window))
   )
+
+  fc_status <- archive_forecasts(store_root, site, config$forecast_sources, now = now)
+
+  sources <- vctrs::vec_rbind(.empty_source_status(), !!!obs_status,
+                              .as_source_status(fc_status, "forecast"))
+  .site_status(sources, step_errors)
 }
 
 #' Sync forecasts and extend curated history products (daily)
@@ -87,26 +70,18 @@ NULL
 #' propagating; other sites are unaffected.
 #'
 #' @inheritParams met_sync_live
-#' @return A tibble with columns `site_id`, `status`, `message`.
+#' @return A per-site status tibble; see [met_sync_live()] (same columns,
+#'   logging, `fail_on` behaviour and per-source isolation).
 #' @family pipeline
 #' @export
 #' @examples
 #' \dontrun{
 #' met_sync_daily(site, config = my_pipeline_config)
 #' }
-met_sync_daily <- function(sites, now = .now(), config) {
-  status <- for_each_site(sites, function(site) {
+met_sync_daily <- function(sites, now = .now(), config,
+                           fail_on = c("none", "any", "all")) {
+  fail_on <- rlang::arg_match(fail_on)
+  .run_sync_verb("met_sync_daily", sites, config, fail_on, function(site) {
     .met_sync_daily_site(site, now = now, config = config)
-  }, on_error = "isolate")
-
-  status$daily_status <- vapply(status$result, function(r) r$status %||% NA_character_,
-                                character(1))
-  status$daily_message <- vapply(status$result, function(r) r$message %||% NA_character_,
-                                 character(1))
-  status$message <- ifelse(status$status == "ok", status$daily_message, status$message)
-  status$status <- ifelse(status$status == "ok", status$daily_status, status$status)
-  status$daily_status <- NULL
-  status$daily_message <- NULL
-  status$result <- NULL
-  status
+  })
 }

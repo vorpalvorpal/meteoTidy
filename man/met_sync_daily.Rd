@@ -4,7 +4,7 @@
 \alias{met_sync_daily}
 \title{Sync forecasts and extend curated history products (daily)}
 \usage{
-met_sync_daily(sites, now = .now(), config)
+met_sync_daily(sites, now = .now(), config, fail_on = c("none", "any", "all"))
 }
 \arguments{
 \item{sites}{A \code{met_site} or \code{met_sites} collection.}
@@ -13,10 +13,20 @@ met_sync_daily(sites, now = .now(), config)
 
 \item{config}{A pipeline configuration list (see \verb{plans/14-*}/
 \code{tests/testthat/helper-pipeline.R}'s \code{pipeline_config()}): at least
-\code{store_root}, \code{obs_sources}, \code{forecast_sources}.}
+\code{store_root}, \code{obs_sources}, \code{forecast_sources}.
+Optional \code{lock_timeout} (seconds, default 600): how long to wait for
+another process's write lock on \code{store_root}.}
+
+\item{fail_on}{When to signal an error (class
+\code{meteoTidy_error_sync_failed}) after all the work is done, so a
+scheduler running \code{Rscript} sees a non-zero exit status: \code{"none"}
+(default; never), \code{"any"} (any site not fully \code{"ok"} -- any source
+failed), \code{"all"} (every site failed outright). The condition carries the
+status table as \code{cnd$status}.}
 }
 \value{
-A tibble with columns \code{site_id}, \code{status}, \code{message}.
+A per-site status tibble; see \code{\link[=met_sync_live]{met_sync_live()}} (same columns,
+logging, \code{fail_on} behaviour and per-source isolation).
 }
 \description{
 Per site (SCOPING section 9): archives every configured forecast source's

@@ -200,7 +200,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_warning_bom_partial",
       "meteoTidy_error_bom_rung_unconfigured",
       "meteoTidy_error_source_stale",
-      "meteoTidy_warning_eagleio_node_empty"
+      "meteoTidy_warning_eagleio_node_empty",
+      "meteoTidy_error_sync_failed"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -280,7 +281,8 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "One BOM forecast product (daily or hourly) failed; the other was still archived.",
       "A BOM transport rung is not configured for this site (e.g. no area code); skipped without a breaker strike.",
       "A source returned no data for the window: the station has stopped reporting.",
-      "Some eagle.io nodes returned no records; the others were kept."
+      "Some eagle.io nodes returned no records; the others were kept.",
+      "met_sync_live()/met_sync_daily() finished with failures and fail_on asked for an error (cnd$status holds the status table)."
     ),
     stringsAsFactors = FALSE
   )

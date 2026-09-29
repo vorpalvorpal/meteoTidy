@@ -139,6 +139,7 @@ Collate:
     'store-connect.R'
     'store-lock.R'
     'store-obs-transport.R'
+    'sync-status.R'
     'tier-emos.R'
     'tier-mean-bias.R'
     'tier-qmap.R'

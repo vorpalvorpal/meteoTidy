@@ -22,3 +22,4 @@ withr::local_options(
   meteoTidy.http_backoff_base = 0.01, meteoTidy.http_backoff_max = 0.05,
   .local_envir = testthat::teardown_env()
 )
+withr::local_options(meteoTidy.sync_log = FALSE, .local_envir = testthat::teardown_env())

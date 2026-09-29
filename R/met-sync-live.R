@@ -31,50 +31,53 @@ NULL
   list(from = now - as.difftime(6, units = "hours"), to = now)
 }
 
-# Run the live sync for one site. Returns a list(status=, message=) rather
-# than throwing on an expected acquisition failure -- degraded, not error.
+# Write one obs source's fetched rows (shared by the live and daily syncs).
+# Returns the number of rows fetched.
+.sync_write_obs <- function(store_root, obs, now) {
+  if (nrow(obs) > 0) {
+    store_write_obs(store_root, obs, now = now, mode = "supersede")
+    if ("transport" %in% names(obs)) {
+      transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
+      obs_transport_write(store_root, obs[transport_cols], now = now)
+    }
+  }
+  nrow(obs)
+}
+
+# Run a non-acquisition step (QC, fill, history) so its failure is reported
+# rather than unwinding the site. Returns NULL or an error message.
+.sync_step <- function(name, expr) {
+  tryCatch({
+    force(expr)
+    NULL
+  }, error = function(cnd) sprintf("%s: %s", name, .one_line(conditionMessage(cnd))))
+}
+
+# Run the live sync for one site. Returns list(status, message, sources):
+# every source is isolated (a dead one is recorded, never thrown).
 .met_sync_live_site <- function(site, now, config) {
   store_root <- config$store_root
   window <- .live_window(now)
-  degraded <- FALSE
-  messages <- character(0)
 
-  for (source in config$obs_sources) {
-    result <- rlang::try_fetch(
-      {
-        obs <- .acquire_obs(source, site, window, now = now)
-        if (nrow(obs) > 0) {
-          store_write_obs(store_root, obs, now = now, mode = "supersede")
-          if ("transport" %in% names(obs)) {
-            transport_cols <- c("site_id", "datetime_utc", "variable", "source", "transport")
-            obs_transport_write(store_root, obs[transport_cols], now = now)
-          }
-        }
-        NULL
-      },
-      error = function(cnd) cnd
-    )
-    if (!is.null(result)) {
-      degraded <- TRUE
-      messages <- c(messages, sprintf("%s: %s", source, conditionMessage(result)))
-    }
-  }
+  obs_status <- lapply(config$obs_sources, function(source) {
+    .run_source("obs", source, {
+      .sync_write_obs(store_root, .acquire_obs(source, site, window, now = now), now)
+    })
+  })
 
   # Hoisted out of the per-source loop (Plan 17 item 11): QC/fill see the
-  # same fully-written window whether run once here or once per source
-  # inside the loop, so running them N times for N obs sources was purely
-  # redundant work -- met_sync_daily() already runs them once, after its
-  # own obs loop; this matches that shape.
-  qc_run(store_root, site, variables = NULL, now = now)
-  fill_run(store_root, site, variables = NULL, now = now)
+  # same fully-written window whether run once here or once per source.
+  step_errors <- c(
+    .sync_step("qc", qc_run(store_root, site, variables = NULL, now = now)),
+    .sync_step("fill", fill_run(store_root, site, variables = NULL, now = now))
+  )
 
-  archive_forecasts(store_root, site, config$forecast_sources, now = now)
+  fc_status <- archive_forecasts(store_root, site, config$forecast_sources, now = now)
   store_set_watermark(store_root, site_id(site), "observations", "live", now)
 
-  list(
-    status = if (degraded) "degraded" else "ok",
-    message = if (length(messages) > 0) paste(messages, collapse = "; ") else NA_character_
-  )
+  sources <- vctrs::vec_rbind(.empty_source_status(), !!!obs_status,
+                              .as_source_status(fc_status, "forecast"))
+  .site_status(sources, step_errors)
 }
 
 #' Sync the live (near-real-time) observation and forecast head
@@ -104,28 +107,39 @@ NULL
 #' @param config A pipeline configuration list (see `plans/14-*`/
 #'   `tests/testthat/helper-pipeline.R`'s `pipeline_config()`): at least
 #'   `store_root`, `obs_sources`, `forecast_sources`.
-#' @return A tibble with columns `site_id`, `status` (`"ok"` or
-#'   `"degraded"`/`"error"`), `message`.
+#'   Optional `lock_timeout` (seconds, default 600): how long to wait for
+#'   another process's write lock on `store_root`.
+#' @param fail_on When to signal an error (class
+#'   `meteoTidy_error_sync_failed`) after all the work is done, so a
+#'   scheduler running `Rscript` sees a non-zero exit status: `"none"`
+#'   (default; never), `"any"` (any site not fully `"ok"` -- any source
+#'   failed), `"all"` (every site failed outright). The condition carries the
+#'   status table as `cnd$status`.
+#' @return A tibble with one row per site: `site_id`; `status` -- `"ok"`
+#'   (every source succeeded), `"degraded"` (some source or step failed),
+#'   `"failed"` (every source failed) or `"error"` (an unexpected error);
+#'   `message` (what failed); and `sources`, a list-column of per-source
+#'   tibbles (`kind`, `source`, `status` = `"ok"`/`"failed"`/`"stale"`, `n`
+#'   rows fetched, `message`). One line per site is also written to stderr
+#'   via [message()] (silence with `options(meteoTidy.sync_log = FALSE)`).
+#'
+#' @section Isolation:
+#' Every source -- each obs source and each forecast source -- runs
+#' isolated: a dead source is recorded in `sources` and the site's other
+#' sources, QC/fill and archiving still run. The whole per-site sync holds
+#' an exclusive lock on `store_root`, so overlapping runs (e.g. a slow
+#' hourly sync still going when the next starts) serialise instead of
+#' writing duplicate rows.
 #' @family pipeline
 #' @export
 #' @examples
 #' \dontrun{
 #' met_sync_live(site, config = my_pipeline_config)
 #' }
-met_sync_live <- function(sites, now = .now(), config) {
-  status <- for_each_site(sites, function(site) {
+met_sync_live <- function(sites, now = .now(), config,
+                          fail_on = c("none", "any", "all")) {
+  fail_on <- rlang::arg_match(fail_on)
+  .run_sync_verb("met_sync_live", sites, config, fail_on, function(site) {
     .met_sync_live_site(site, now = now, config = config)
-  }, on_error = "isolate")
-
-  status$degraded_status <- vapply(status$result, function(r) r$status %||% NA_character_,
-                                   character(1))
-  status$degraded_message <- vapply(status$result, function(r) r$message %||% NA_character_,
-                                    character(1))
-
-  status$message <- ifelse(status$status == "ok", status$degraded_message, status$message)
-  status$status <- ifelse(status$status == "ok", status$degraded_status, status$status)
-  status$degraded_status <- NULL
-  status$degraded_message <- NULL
-  status$result <- NULL
-  status
+  })
 }
