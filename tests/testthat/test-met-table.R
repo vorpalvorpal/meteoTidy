@@ -23,10 +23,10 @@ describe("new_met_table()", {
   })
 })
 
-describe("print() shows the provenance banner", {
-  it("renders the compact per-column tier banner (snapshot)", {
-    expect_snapshot(print(make_met_table()))
-  })
+# Snapshots live in plain test_that() blocks: testthat >= 3.3 keys describe()/it()
+# snapshots as "x / y" (older: "x: y"), which orphans the committed .md.
+test_that("print() shows the provenance banner: renders the compact per-column tier banner (snapshot)", {
+  expect_snapshot(print(make_met_table()))
 })
 
 describe("validator", {

@@ -22,17 +22,20 @@ describe("abort_meteo()", {
     expect_error(abort_meteo("no class here"))
   })
 
-  it("renders a multi-bullet cli message stably", {
-    expect_snapshot(
-      error = TRUE,
-      abort_meteo(
-        c("Bad thing happened.",
-          "x" = "the value was {.val 42}",
-          "i" = "try {.code met_help()}"),
-        class = "demo"
-      )
+})
+
+# Snapshots live in plain test_that() blocks: testthat >= 3.3 keys describe()/it()
+# snapshots as "x / y" (older: "x: y"), which orphans the committed .md.
+test_that("abort_meteo(): renders a multi-bullet cli message stably", {
+  expect_snapshot(
+    error = TRUE,
+    abort_meteo(
+      c("Bad thing happened.",
+        "x" = "the value was {.val 42}",
+        "i" = "try {.code met_help()}"),
+      class = "demo"
     )
-  })
+  )
 })
 
 describe("warn_meteo()", {
