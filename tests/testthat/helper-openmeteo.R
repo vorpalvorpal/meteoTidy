@@ -25,7 +25,7 @@ om_fetch <- function(product, body, site = make_test_site(), # nolint: object_us
   obs_like <- product %in% c("historical")
   # Named models look up their run time in the model's metadata (a
   # separate request, answered here without touching `capture`).
-  meta <- list(last_run_initialisation_time = as.numeric(now) - as.numeric(now) %% 21600 - 21600)
+  meta <- list(last_run_initialisation_time = as.numeric(now) - as.numeric(now) %% 21600)
   fake <- function(url, headers = list(), query = list(), retry = 3, now = NULL) {
     if (grepl("/static/meta[.]json$", url)) {
       return(meta)

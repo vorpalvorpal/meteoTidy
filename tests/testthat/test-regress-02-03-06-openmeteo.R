@@ -53,10 +53,10 @@ describe("problem 3: issue_time is the model run, so re-syncs dedup", {
     expect_equal(unique(fc$model), "ecmwf_ifs025")
   })
 
-  it("floors best_match (no single run) to the 6-hourly cycle", {
+  it("floors a configured best_match (no single run) to the 6-hourly cycle", {
     site <- make_prod_site("kat")
     fc <- with_routed_http(openmeteo_routes(), {
-      fetch_forecast(source_openmeteo("forecast"), site, "temperature_2m",
+      fetch_forecast(source_openmeteo("forecast", models = "best_match"), site, "temperature_2m",
                      issue_window_for(prod_now()), now = prod_now())
     })
     expect_equal(unique(fc$issue_time), as.POSIXct("2026-09-29 06:00:00", tz = "UTC"))

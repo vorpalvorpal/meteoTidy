@@ -39,9 +39,16 @@
 #' @param models Optional character vector of underlying NWP model ids (see
 #'   the (non-exhaustive, extensible) roster in `R/openmeteo-endpoints.R`).
 #'   Each model is requested separately and archived under its own `model`
-#'   label. `NULL` (default) uses `"best_match"` for `"forecast"` and
-#'   `"ecmwf_ifs025"` (ECMWF IFS 0.25 deg) for `"ensemble"` -- the Ensemble
-#'   API rejects requests without a model.
+#'   label, stamped with that model's real run initialisation time from
+#'   Open-Meteo's metadata. `NULL` (default) uses `c("ecmwf_ifs025",
+#'   "gfs_global", "icon_global")` for `"forecast"` and `"ecmwf_ifs025"`
+#'   (ECMWF IFS 0.25 deg) for `"ensemble"` -- the Ensemble API rejects
+#'   requests without a model. `"best_match"` (Open-Meteo's blend) is
+#'   fetched only when named here; it has no run time, so it is stamped with
+#'   the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
+#'   in `forecast_aux` (field `issue_time_basis:best_match`). When one of
+#'   several models fails, the others are still returned, with a warning of
+#'   class `meteoTidy_warning_openmeteo_model_failed`.
 #' @param provides Optional character vector narrowing the variables this
 #'   adapter requests (e.g. from site YAML). Defaults to every hourly
 #'   dictionary variable Open-Meteo serves (a smaller set for `"ensemble"`).
@@ -176,15 +183,63 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   }
   model_list <- if (is.null(models)) list(NULL) else as.list(models)
 
+  # Each model is isolated: one model's failure (e.g. its run time is not
+  # yet known) is a warning while the others still archive; only when every
+  # model fails does the source fail, with the first model's error.
+  errors <- list()
   pieces <- lapply(model_list, function(model) {
-    .openmeteo_fetch_one_model(adapter, site, variables, issue_window, now,
-                               product, model, key, forecast_days)
+    tryCatch(
+      .openmeteo_fetch_one_model(adapter, site, variables, issue_window, now,
+                                 product, model, key, forecast_days),
+      error = function(cnd) {
+        errors[[model %||% product]] <<- cnd
+        NULL
+      }
+    )
   })
+  if (length(errors) > 0 && length(errors) == length(model_list)) {
+    rlang::cnd_signal(errors[[1]])
+  }
+  for (m in names(errors)) {
+    reason <- gsub("([{}])", "\\1\\1", .one_line(conditionMessage(errors[[m]]))) # nolint: object_usage_linter. used via cli glue
+    warn_meteo(
+      c("Open-Meteo model {.val {m}} was not archived this time; the other models were.",
+        x = reason),
+      class = "openmeteo_model_failed"
+    )
+  }
   out <- vctrs::vec_rbind(!!!pieces)
   if (is.null(out)) {
     return(new_forecast(.empty_forecast()))
   }
-  out[out$variable %in% variables, , drop = FALSE]
+  aux <- .openmeteo_issue_basis_aux(out, site, adapter@source_id)
+  out <- out[out$variable %in% variables, , drop = FALSE]
+  if (!is.null(aux)) {
+    attr(out, "aux") <- aux
+  }
+  out
+}
+
+# best_match blends several models, so its issue_time (the 6-hourly cycle
+# floor of the fetch time) is not a run anyone issued. Say so beside the
+# rows, in forecast_aux, so verification and readers can tell (item 6).
+.openmeteo_issue_basis_aux <- function(fc, site, source_id) {
+  bm <- fc[fc$model %in% "best_match", , drop = FALSE]
+  if (nrow(bm) == 0) {
+    return(NULL)
+  }
+  issue <- unique(bm$issue_time)
+  new_forecast_aux(tibble::tibble(
+    site_id = site_id(site),
+    source = source_id,
+    issue_time = issue,
+    valid_time = issue,
+    field = "issue_time_basis:best_match",
+    value_text = paste(
+      "not verifiable: best_match blends several models, so it has no run time;",
+      "issue_time is the fetch time floored to the 6-hourly cycle"
+    )
+  ))
 }
 
 .openmeteo_fetch_one_model <- function(adapter, site, variables, issue_window, now,

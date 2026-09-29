@@ -194,8 +194,9 @@ NULL
 #' Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
 #' product nobody issued). `source`/`model` choose it; by default the
 #' archive's only source (or `"openmeteo"` when there are several) and that
-#' source's only model (or `"best_match"`, then `"hourly"`, when there are
-#' several). Of that source/model, only the **latest archived issuance** is
+#' source's only model (or, when there are several, the first of `"best_match"`,
+#' `"ecmwf_ifs025"`, `"gfs_global"`, `"icon_global"`, `"hourly"` archived). Of that
+#' source/model, only the **latest archived issuance** is
 #' served: the archive holds every past issuance overlapping the window
 #' (SCOPING section 9's archive-on-every-sync policy). Ensemble members
 #' within that issuance are reported as the ensemble mean; per-member
@@ -311,7 +312,7 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   src <- pick(sort(unique(fc$source)), source, "openmeteo", "source")
   fc <- fc[fc$source == src, , drop = FALSE]
   mdl_have <- sort(unique(ifelse(is.na(fc$model), "", fc$model)))
-  mdl <- pick(mdl_have, model, c("best_match", "hourly"), "model")
+  mdl <- pick(mdl_have, model, c("best_match", .openmeteo_default_models("forecast"), "hourly"), "model")
   fc[ifelse(is.na(fc$model), "", fc$model) == mdl, , drop = FALSE]
 }
 

@@ -142,10 +142,17 @@
 # Default underlying models when none are configured. The Ensemble API has no
 # "best_match" and returns HTTP 400 without `models` (problem 6), so it
 # defaults to ECMWF IFS 0.25 deg. The deterministic Forecast API defaults to
-# Open-Meteo's "best_match" blend (the only single choice that serves every
-# section 3.1 variable, e.g. soil moisture and boundary-layer height).
+# three NAMED global models, each archived under its own label with its real
+# run time (follow-up review, item 6): "best_match" blends models, so any
+# issue time given to it is a guess and it cannot be verified. Between them
+# the three serve every section 3.1 variable (ECMWF IFS lacks soil moisture,
+# boundary-layer height, UV and 80 m wind; ICON and GFS fill those), and
+# met_wide() picks per variable in this order.
 .openmeteo_default_models <- function(product) {
-  switch(product, ensemble = "ecmwf_ifs025", "best_match")
+  switch(product,
+    ensemble = "ecmwf_ifs025",
+    c("ecmwf_ifs025", "gfs_global", "icon_global")
+  )
 }
 
 # Default variables for the ensemble: the ensemble API serves a subset of the
@@ -188,7 +195,18 @@
     )
     return(unname(known[model]) %|NA|% paste0(model, "_ensemble"))
   }
-  model
+  # Forecast API model ids whose metadata lives under a different dataset
+  # name (checked live 2026-09-29).
+  known <- c(
+    gfs_global = "ncep_gfs025",
+    gfs025 = "ncep_gfs025",
+    icon_global = "dwd_icon",
+    icon_eu = "dwd_icon_eu",
+    icon_d2 = "dwd_icon_d2",
+    gem_global = "cmc_gem_gdps",
+    bom_access_global = "bom_access_global"
+  )
+  unname(known[model]) %|NA|% model
 }
 
 `%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
@@ -242,7 +260,7 @@
   init <- if (is.list(meta)) suppressWarnings(as.numeric(meta$last_run_initialisation_time)) else NA
   init <- if (length(init) == 1 && !is.na(init)) as.POSIXct(init, origin = "1970-01-01", tz = "UTC") else NA
   if (is.na(init) || init > now) {
-    why <- gsub("([{}])", "\1\1", meta_error %||% "no valid last_run_initialisation_time")
+    why <- gsub("([{}])", "\\1\\1", meta_error %||% "no valid last_run_initialisation_time")
     abort_meteo(
       c("Could not determine the run time of Open-Meteo model {.val {model}} ({product}); not archiving it this time.",
         x = why),

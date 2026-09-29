@@ -49,8 +49,9 @@ For \code{kind = "forecast"}, exactly \strong{one source and one model} is serve
 Open-Meteo run, an ECMWF ensemble and BOM's edited forecast into a
 product nobody issued). \code{source}/\code{model} choose it; by default the
 archive's only source (or \code{"openmeteo"} when there are several) and that
-source's only model (or \code{"best_match"}, then \code{"hourly"}, when there are
-several). Of that source/model, only the \strong{latest archived issuance} is
+source's only model (or, when there are several, the first of \code{"best_match"},
+\code{"ecmwf_ifs025"}, \code{"gfs_global"}, \code{"icon_global"}, \code{"hourly"} archived). Of that
+source/model, only the \strong{latest archived issuance} is
 served: the archive holds every past issuance overlapping the window
 (SCOPING section 9's archive-on-every-sync policy). Ensemble members
 within that issuance are reported as the ensemble mean; per-member

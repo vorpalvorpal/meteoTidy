@@ -23,9 +23,15 @@ source_openmeteo(
 \item{models}{Optional character vector of underlying NWP model ids (see
 the (non-exhaustive, extensible) roster in \code{R/openmeteo-endpoints.R}).
 Each model is requested separately and archived under its own \code{model}
-label. \code{NULL} (default) uses \code{"best_match"} for \code{"forecast"} and
-\code{"ecmwf_ifs025"} (ECMWF IFS 0.25 deg) for \code{"ensemble"} -- the Ensemble
-API rejects requests without a model.}
+label, stamped with that model's real run initialisation time from
+Open-Meteo's metadata. \code{NULL} (default) uses \code{c("ecmwf_ifs025", "gfs_global", "icon_global")} for \code{"forecast"} and \code{"ecmwf_ifs025"}
+(ECMWF IFS 0.25 deg) for \code{"ensemble"} -- the Ensemble API rejects
+requests without a model. \code{"best_match"} (Open-Meteo's blend) is
+fetched only when named here; it has no run time, so it is stamped with
+the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
+in \code{forecast_aux} (field \code{issue_time_basis:best_match}). When one of
+several models fails, the others are still returned, with a warning of
+class \code{meteoTidy_warning_openmeteo_model_failed}.}
 
 \item{api_key_env}{Optional single string: the \emph{name} of an environment
 variable holding a commercial Open-Meteo API key. See Licensing above.}
