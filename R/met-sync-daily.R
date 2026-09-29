@@ -32,6 +32,10 @@ NULL
     refetch <- .refetch_window_for(config, source)
     window <- store_effective_fetch_window(store_root, sid, "observations", source,
                                            refetch = refetch, now = now)
+    # No watermark yet (fresh store): adapters cannot fetch an open-ended
+    # window, so a first run covers the refetch window; backfilling full
+    # history is met_backfill()'s job.
+    window$from <- window$from %||% (now - refetch)
     .run_source("obs", source, {
       n <- .sync_write_obs(store_root, .acquire_obs(source, site, window, now = now), now)
       store_set_watermark(store_root, sid, "observations", source, now)

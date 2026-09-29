@@ -4,13 +4,13 @@ Task: `C:\Users\KatoombaWMF\dev\meteoTidy_prompt.md` (problems 1–12 + Definiti
 Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NOT merge.
 
 ## Current state
-- PAUSED at user request after committing fix(8) (1fc880b). Working tree clean.
-- Committed: 1, 9, 2/3/6, 4, 5, 11, 7/10, 8. Full suite 1154 pass / 0 fail / 3 skip.
+- All 12 problems committed (12 = c544104). Branch pushed to origin (gh auth OK). Suite 1174 pass / 0 fail / 3 skip.
 - Sync verbs return site_id/status/message/sources(list-col); fail_on arg; stderr log line;
   per-site store lock (config$lock_timeout). Tests set options(meteoTidy.sync_log = FALSE) in setup.R.
 - met_wide(source=, model=): defaults only-source else openmeteo; only-model else best_match, hourly.
   Gust>=wind enforced; shortwave_radiation in contract (direct+diffuse fallback).
-- NEXT: problem 12 (SILO), then acceptance script / docs / NEWS / check / live run / PR.
+- SILO: DataDrill live OK; obs vars now temperature_2m_max/_min, precipitation, shortwave_radiation (daily mean W/m2), pressure_msl.
+- NEXT: inst/acceptance/live_sync.R (a-g), live run, docs/NEWS, check, PR.
 ## Pending (in order)
 - [x] 1  lead_time whole seconds
 - [x] 9  filelock + read-dedup
@@ -27,8 +27,7 @@ Branch: `fix/production-archiving` (off `main` c53f59f). Push + PR at end; do NO
         stat when no deterministic rows, filter to requested variables before building time base,
         enforce gusts >= wind after aggregation, add shortwave_radiation to .met31_variables
         (or compute direct+diffuse). Provenance names the chosen source.
-- [ ] 12 SILO HTML "Request Rejected" → classed error; compare with weatherOz::get_data_drill
-        request (UA "weatherOz R package"?). Record fixture of rejected page.
+- [x] 12 SILO classed errors (silo_rejected/bad_request/failed), DataDrill reshape, qcodes 42/35/75, tmax/tmin, radiation
 - [ ] inst/acceptance/live_sync.R (checks a–g); README + vignette production section; NEWS
         (breaking: BOM forecast variables/model labels; openmeteo provides default; lead_time units);
         `devtools::check()` 0E/0W; live acceptance run; push; PR; issues for deferred items.
