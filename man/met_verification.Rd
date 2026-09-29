@@ -30,6 +30,7 @@ met_verification(site)
 Other read-api: 
 \code{\link{met_connect}()},
 \code{\link{met_forecast_archive}()},
+\code{\link{met_forecast_aux}()},
 \code{\link{met_history}()},
 \code{\link{met_record}()}
 }

@@ -36,6 +36,7 @@ dplyr::tbl(con, "observations")
 \seealso{
 Other read-api: 
 \code{\link{met_forecast_archive}()},
+\code{\link{met_forecast_aux}()},
 \code{\link{met_history}()},
 \code{\link{met_record}()},
 \code{\link{met_verification}()}

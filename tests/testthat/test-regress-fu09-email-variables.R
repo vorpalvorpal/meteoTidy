@@ -93,3 +93,23 @@ describe("item 9: variables for the email", {
     expect_true(all(fdc$value_text %in% c("No Rating", "Moderate", "High", "Extreme", "Catastrophic")))
   })
 })
+
+describe("item 9: reading the archived text fields", {
+  it("met_forecast_aux() returns the fire-danger category a sync archived", {
+    root <- withr::local_tempdir()
+    site <- make_prod_site("blax", store_root = root, sources = list(
+      bom_forecast = list(adapter = "bom_forecast", allow_web_api = TRUE)
+    ))
+    routes <- list(
+      "r65050/forecasts/daily" = "bom/webapi-daily-r65050.json",
+      "r65050/forecasts/hourly" = "bom/webapi-hourly-r65050.json"
+    )
+    cfg <- list(store_root = root, obs_sources = character(0), forecast_sources = "bom_forecast")
+    suppressMessages(with_routed_http(routes, met_sync_live(site, now = prod_now(), config = cfg)))
+    fdc <- met_forecast_aux(site, source = "bom_forecast", field = "fire_danger_category")
+    expect_gte(nrow(fdc), 4)
+    expect_setequal(unique(fdc$field), "fire_danger_category")
+    expect_true("Moderate" %in% fdc$value_text)
+    expect_equal(nrow(met_forecast_aux(site, source = "openmeteo")), 0)
+  })
+})
