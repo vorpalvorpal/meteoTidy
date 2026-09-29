@@ -141,7 +141,9 @@
 
 # Default underlying models when none are configured. The Ensemble API has no
 # "best_match" and returns HTTP 400 without `models` (problem 6), so it
-# defaults to ECMWF IFS 0.25 deg. The deterministic Forecast API defaults to
+# defaults to ECMWF IFS 0.25 deg (51 members, 15 days) plus DWD's ICON
+# ensemble (40 members, 7.5 days; item 9) -- two independent ensembles for
+# the email's probabilistic panel. The deterministic Forecast API defaults to
 # three NAMED global models, each archived under its own label with its real
 # run time (follow-up review, item 6): "best_match" blends models, so any
 # issue time given to it is a guess and it cannot be verified. Between them
@@ -150,7 +152,7 @@
 # met_wide() picks per variable in this order.
 .openmeteo_default_models <- function(product) {
   switch(product,
-    ensemble = "ecmwf_ifs025",
+    ensemble = c("ecmwf_ifs025", "icon_seamless"),
     c("ecmwf_ifs025", "gfs_global", "icon_global")
   )
 }
@@ -172,9 +174,37 @@
 # dictionary variables (temperature_2m_max, ...) are not valid hourly
 # parameters and would make the request fail with HTTP 400.
 .openmeteo_hourly_variables <- function() {
-  c(
+  unique(c(
     .met31_variables(), "dewpoint_2m", "shortwave_radiation",
-    "precipitation_probability", "apparent_temperature", "cape", "uv_index"
+    "precipitation_probability", "apparent_temperature", "cape", "uv_index",
+    "weather_code", "is_day"
+  ))
+}
+
+# Variables a model does not produce on Open-Meteo (it answers with unit
+# "undefined" and all-null values), checked live at Katoomba 2026-09-29.
+# They are left out of that model's request instead of being fetched and
+# skipped with a warning on every sync (item 9). Other models: request all.
+.openmeteo_model_unsupported <- function(product, model) {
+  if (is.null(model)) {
+    return(character(0))
+  }
+  if (identical(product, "ensemble")) {
+    return(switch(model,
+      icon_seamless = "wind_gusts_10m",
+      character(0)
+    ))
+  }
+  high_wind <- c("wind_speed_120m", "wind_direction_120m", "wind_speed_180m", "wind_direction_180m")
+  switch(model,
+    ecmwf_ifs025 = c(
+      "wind_speed_80m", "wind_direction_80m", high_wind, "boundary_layer_height",
+      "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm", "uv_index"
+    ),
+    gfs_global = c("wind_speed_180m", "wind_direction_180m",
+                   "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm"),
+    icon_global = c("boundary_layer_height", "uv_index"),
+    character(0)
   )
 }
 

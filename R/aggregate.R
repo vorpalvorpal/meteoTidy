@@ -47,6 +47,9 @@
 .aggregate_value <- function(values, stat_class) {
   if (isTRUE(stat_class == "intermittent")) {
     sum(values, na.rm = TRUE)
+  } else if (isTRUE(stat_class == "categorical")) {
+    # A code: keep the most severe (highest) one, never an average.
+    if (all(is.na(values))) NA_real_ else max(values, na.rm = TRUE)
   } else if (isTRUE(stat_class == "circular")) {
     .circular_mean(values)
   } else {

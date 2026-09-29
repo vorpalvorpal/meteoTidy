@@ -5,13 +5,16 @@
 \alias{STAT_CLASS_LEVELS}
 \title{Statistical-class levels}
 \format{
-An object of class \code{character} of length 5.
+An object of class \code{character} of length 6.
 }
 \usage{
 STAT_CLASS_LEVELS
 }
 \description{
-Drives QC and correction dispatch (SCOPING §3, §6).
+Drives QC and correction dispatch (SCOPING §3, §6). \code{"categorical"} is a
+code, not a quantity (e.g. \code{weather_code}, \code{is_day}): never averaged,
+interpolated or checked against a climatology; hourly aggregation keeps
+the highest code (WMO weather codes rise with severity).
 }
 \seealso{
 Other enums: 

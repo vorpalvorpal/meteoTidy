@@ -24,8 +24,7 @@ source_openmeteo(
 the (non-exhaustive, extensible) roster in \code{R/openmeteo-endpoints.R}).
 Each model is requested separately and archived under its own \code{model}
 label, stamped with that model's real run initialisation time from
-Open-Meteo's metadata. \code{NULL} (default) uses \code{c("ecmwf_ifs025", "gfs_global", "icon_global")} for \code{"forecast"} and \code{"ecmwf_ifs025"}
-(ECMWF IFS 0.25 deg) for \code{"ensemble"} -- the Ensemble API rejects
+Open-Meteo's metadata. \code{NULL} (default) uses \code{c("ecmwf_ifs025", "gfs_global", "icon_global")} for \code{"forecast"} and \code{c("ecmwf_ifs025", "icon_seamless")} (ECMWF IFS 0.25 deg and ICON-EPS) for \code{"ensemble"} -- the Ensemble API rejects
 requests without a model. \code{"best_match"} (Open-Meteo's blend) is
 fetched only when named here; it has no run time, so it is stamped with
 the 6-hourly cycle floor of the fetch time and flagged "not verifiable"

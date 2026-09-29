@@ -284,7 +284,7 @@ bom_parse_webapi_daily <- function(body, site_id, source = "bom_forecast") {
 #' Parse a BOM web-API daily forecast into forecast_aux rows
 #'
 #' Fields: `precis` (`short_text`), `forecast` (`extended_text`),
-#' `fire_danger`, `uv_category`, `chance_of_no_rain_category`, `icon`; plus
+#' `fire_danger`, `fire_danger_category` (the AFDRS rating text), `uv_category`, `chance_of_no_rain_category`, `icon`; plus
 #' one `location` row (valid at the issue time) naming the geohash and BOM's
 #' forecast region for it, e.g. `"geohash r65050 (BOM forecast region
 #' Penrith)"`.
@@ -302,6 +302,7 @@ bom_parse_webapi_daily_aux <- function(body, site_id, source = "bom_forecast", g
   )
   fields <- list(
     precis = "short_text", forecast = "extended_text", fire_danger = "fire_danger",
+    fire_danger_category = c("fire_danger_category", "text"),
     uv_category = c("uv", "category"),
     chance_of_no_rain_category = c("rain", "chance_of_no_rain_category"),
     icon = "icon_descriptor"

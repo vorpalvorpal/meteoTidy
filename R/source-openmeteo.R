@@ -47,8 +47,8 @@
 #'   Each model is requested separately and archived under its own `model`
 #'   label, stamped with that model's real run initialisation time from
 #'   Open-Meteo's metadata. `NULL` (default) uses `c("ecmwf_ifs025",
-#'   "gfs_global", "icon_global")` for `"forecast"` and `"ecmwf_ifs025"`
-#'   (ECMWF IFS 0.25 deg) for `"ensemble"` -- the Ensemble API rejects
+#'   "gfs_global", "icon_global")` for `"forecast"` and `c("ecmwf_ifs025",
+#'   "icon_seamless")` (ECMWF IFS 0.25 deg and ICON-EPS) for `"ensemble"` -- the Ensemble API rejects
 #'   requests without a model. `"best_match"` (Open-Meteo's blend) is
 #'   fetched only when named here; it has no run time, so it is stamped with
 #'   the 6-hourly cycle floor of the fetch time and flagged "not verifiable"
@@ -298,6 +298,10 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
 .openmeteo_fetch_one_model <- function(adapter, site, variables, issue_window, now,
                                        product, model, key, forecast_days) {
   model_label <- model %||% adapter@product
+  variables <- setdiff(variables, .openmeteo_model_unsupported(product, model))
+  if (length(variables) == 0) {
+    return(.empty_forecast()) # nothing this model can serve was asked for
+  }
   url <- .openmeteo_build_url(
     product, site, variables, issue_window,
     api_key = key,
