@@ -23,15 +23,16 @@ Follow-up to the production review.
 - **The free-tier notice is shown once per R session** (was every call);
   `options(meteoTidy.openmeteo_free_tier_notice = "always" | "never")`.
 - **`met_wide()` default model** for a source with several: each variable
-  comes from the first of `best_match`, `ecmwf_ifs025`, `gfs_global`,
-  `icon_global`, `icon_seamless`, `hourly` that has it (was: one model for
+  comes from the first of `ecmwf_ifs025`, `gfs_global`, `icon_global`,
+  `best_match`, `icon_seamless`, `hourly` that has it (was: one model for
   every variable). Provenance gains `model` and `stat` columns. A model
   whose latest run is more than a day behind the newest listed model
   (option `meteoTidy.wide_stale_hours`, default 24) drops behind every
   current model and only serves variables no current model has. After
   upgrading, the store's last pre-upgrade `best_match` run (16-day horizon)
-  therefore no longer outranks the newer named-model runs. A model named
-  alone in `model =` is served as is.
+  therefore no longer outranks the newer named-model runs (best_match also
+  ranks behind the named models, so it cannot win in the first day after
+  upgrading either). A model named alone in `model =` is served as is.
 - **Precis rows are relabelled.** Existing stores keep their old précis
   rows as `model = "daily"`; new précis rows are `"daily_precis"`, and
   `"daily"` now means the geohash web-API forecast.

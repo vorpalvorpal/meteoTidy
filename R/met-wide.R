@@ -229,7 +229,7 @@ NULL
 #' first listed model that has any value for it in the window (no single
 #' Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
 #' height or soil moisture). By default it is the source's only model, or
-#' else `"best_match"`, `"ecmwf_ifs025"`, `"gfs_global"`, `"icon_global"`,
+#' else `"ecmwf_ifs025"`, `"gfs_global"`, `"icon_global"`, `"best_match"`,
 #' `"icon_seamless"`, `"hourly"` in that order. A model whose latest
 #' archived run is more than a day (option `meteoTidy.wide_stale_hours`,
 #' default 24) behind the newest run of the other listed models -- one no
@@ -426,13 +426,15 @@ met_wide <- function(site, window, kind = c("forecast", "record"), variables = N
   c(precedence[!stale], precedence[stale])
 }
 
-# met_wide()'s default model precedence when a source has several: an
-# explicitly configured best_match first, then Open-Meteo's default named
-# deterministic models (ECMWF IFS, GFS, ICON -- item 6), the default
-# ensembles, then BOM's hourly forecast. Each variable is served from the
-# first of these that has it (item 10).
+# met_wide()'s default model precedence when a source has several:
+# Open-Meteo's default named deterministic models (ECMWF IFS, GFS, ICON --
+# item 6), then best_match (no verifiable run time; a store upgraded from
+# before item 6 still holds its last runs, which must not outrank the named
+# models even while less than a day old), the default ensembles, then BOM's
+# hourly forecast. Each variable is served from the first of these that has
+# it (item 10).
 .wide_default_model_precedence <- function() {
-  unique(c("best_match", .openmeteo_default_models("forecast"),
+  unique(c(.openmeteo_default_models("forecast"), "best_match",
            .openmeteo_default_models("ensemble"), "hourly"))
 }
 

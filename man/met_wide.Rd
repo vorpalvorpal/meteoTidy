@@ -59,7 +59,7 @@ several. \code{model} is a precedence list: each variable is served from the
 first listed model that has any value for it in the window (no single
 Open-Meteo model has every variable -- ECMWF IFS has no boundary-layer
 height or soil moisture). By default it is the source's only model, or
-else \code{"best_match"}, \code{"ecmwf_ifs025"}, \code{"gfs_global"}, \code{"icon_global"},
+else \code{"ecmwf_ifs025"}, \code{"gfs_global"}, \code{"icon_global"}, \code{"best_match"},
 \code{"icon_seamless"}, \code{"hourly"} in that order. A model whose latest
 archived run is more than a day (option \code{meteoTidy.wide_stale_hours},
 default 24) behind the newest run of the other listed models -- one no

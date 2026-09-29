@@ -52,13 +52,20 @@ describe("stale models in met_wide()'s precedence", {
     expect_equal(served[["boundary_layer_height"]], "gfs_global")
   })
 
-  it("still serves best_match when it is current", {
-    root <- withr::local_tempdir()
-    site <- fu13_archive(root)
-    fu13_add_old_best_match(root, age_hours = 0)
-    wide <- met_wide(site, fu13_window(), variables = "temperature_2m",
-                     source = "openmeteo", now = prod_now())
-    expect_equal(met_provenance(wide)$model, "best_match")
+  # Review of the 24 h rule: for the first day after the upgrade the last
+  # best_match run is less than 24 h behind the named models, so the stale
+  # rule alone still served it. best_match (no verifiable run time) now ranks
+  # behind the named models by default; it is served only when asked for or
+  # when no named model has the variable.
+  it("prefers named models over a best_match run only hours behind", {
+    for (age in c(6, 0)) {
+      root <- withr::local_tempdir()
+      site <- fu13_archive(root)
+      fu13_add_old_best_match(root, age_hours = age)
+      wide <- met_wide(site, fu13_window(), variables = "temperature_2m",
+                       source = "openmeteo", now = prod_now())
+      expect_equal(met_provenance(wide)$model, "ecmwf_ifs025", info = paste(age, "h"))
+    }
   })
 
   it("demotes a stale model in an explicit precedence too, but serves it when named alone", {
