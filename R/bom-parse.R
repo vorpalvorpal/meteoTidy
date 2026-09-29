@@ -132,7 +132,7 @@
   }
   if (inherits(area, "xml_missing")) {
     abort_meteo(
-      "BOM précis product has no area {.val {aac}}.",
+      "BOM precis product has no area {.val {aac}}.",
       class = "bom_rung_unconfigured"
     )
   }

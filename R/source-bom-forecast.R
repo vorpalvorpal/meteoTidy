@@ -79,7 +79,7 @@
       if (is.na(product)) {
         abort_meteo(
           c(
-            "No BOM précis area code (AAC) is configured for this site.",
+            "No BOM precis area code (AAC) is configured for this site.",
             "i" = "Set {.code resolved: bom: aac:} (e.g. {.val NSW_PT072}) to use the official product feed."
           ),
           class = "bom_rung_unconfigured"

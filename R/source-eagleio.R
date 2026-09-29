@@ -106,10 +106,12 @@ source_eagleio <- S7::new_class(
   if (is.na(unit) || !nzchar(unit)) {
     return(canonical_unit(variable))
   }
-  switch(unit,
-    "°C" = "degC", "°" = "degree", "W/m²" = "W/m2", "m³/m³" = "m3/m3",
-    unit
+  # eagle.io's unit labels, written as escapes to keep the code ASCII.
+  known <- stats::setNames(
+    c("degC", "degree", "W/m2", "m3/m3"),
+    c("\u00b0C", "\u00b0", "W/m\u00b2", "m\u00b3/m\u00b3")
   )
+  if (unit %in% names(known)) known[[unit]] else unit
 }
 
 # The time of a node's most recent value (NA if the lookup fails).
