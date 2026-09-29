@@ -1,0 +1,22 @@
+{
+  "docType" : "jts",
+  "subType" : "TIMESERIES",
+  "version" : "1.0",
+  "header" : {
+    "recordCount" : 0,
+    "columns" : {
+      "0" : {
+        "id" : "647e9492dac9bf46aa1ffd0f",
+        "name" : "WEATHER-10min - Rain-Tot",
+        "dataType" : "NUMBER",
+        "aggregate" : "NONE",
+        "baseTime" : "D[Z]",
+        "format" : "0.#",
+        "renderType" : "VALUE",
+        "units" : "mm",
+        "baselineType" : "ABSOLUTE"
+      }
+    }
+  },
+  "data" : [ ]
+}

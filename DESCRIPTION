@@ -129,6 +129,7 @@ Collate:
     'site-yaml.R'
     'source-bom-forecast.R'
     'source-bom-obs.R'
+    'source-eagleio.R'
     'source-openmeteo.R'
     'source-ecmwf.R'
     'source-rest.R'

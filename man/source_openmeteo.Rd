@@ -10,6 +10,8 @@ source_openmeteo(
   models = NULL,
   api_key_env = NULL,
   source_id = "openmeteo",
+  provides = NULL,
+  forecast_days = NULL,
   ...
 )
 }
@@ -20,14 +22,23 @@ source_openmeteo(
 
 \item{models}{Optional character vector of underlying NWP model ids (see
 the (non-exhaustive, extensible) roster in \code{R/openmeteo-endpoints.R}).
-\code{NULL} (default) lets Open-Meteo pick its default model(s) for the
-product.}
+Each model is requested separately and archived under its own \code{model}
+label. \code{NULL} (default) uses \code{"best_match"} for \code{"forecast"} and
+\code{"ecmwf_ifs025"} (ECMWF IFS 0.25 deg) for \code{"ensemble"} -- the Ensemble
+API rejects requests without a model.}
 
 \item{api_key_env}{Optional single string: the \emph{name} of an environment
 variable holding a commercial Open-Meteo API key. See Licensing above.}
 
 \item{source_id}{Single string stamped into the \code{source} column of every
 returned row. Default \code{"openmeteo"}.}
+
+\item{provides}{Optional character vector narrowing the variables this
+adapter requests (e.g. from site YAML). Defaults to every hourly
+dictionary variable Open-Meteo serves (a smaller set for \code{"ensemble"}).}
+
+\item{forecast_days}{Optional horizon in days for \code{"forecast"}/
+\code{"ensemble"}; defaults to the longest the product serves (16 / 15).}
 
 \item{...}{Reserved for future product-specific options.}
 }
@@ -83,6 +94,7 @@ Other adapter:
 \code{\link{resolve_station}()},
 \code{\link{source_bom_forecast}()},
 \code{\link{source_bom_obs}()},
+\code{\link{source_eagleio}()},
 \code{\link{source_ecmwf}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},

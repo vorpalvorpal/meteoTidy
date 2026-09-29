@@ -304,6 +304,15 @@ check_fetch_result <- function(x, adapter, variables) {
     ))
   }
 
+  if (kind == "eagleio") {
+    return(source_eagleio(
+      nodes = config$nodes,
+      api_key_env = config$api_key_env %||% "EAGLE_API_KEY",
+      source_id = source_name,
+      base_url = config$base_url %||% "https://api.eagle.io/api/v1"
+    ))
+  }
+
   if (kind == "ecmwf") {
     return(source_ecmwf(
       stream = config$stream %||% "enfo",
@@ -325,7 +334,7 @@ check_fetch_result <- function(x, adapter, variables) {
   abort_meteo(
     c(
       "Source {.val {source_name}} declares unknown adapter kind {.val {kind}}.",
-      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', 'ecmwf', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
+      "i" = "Recognised kinds: {.val {c('rest', 'file', 'openmeteo', 'silo', 'ghcnh', 'bom_forecast', 'bom_obs', 'ecmwf', 'eagleio', .adapter_not_yet_implemented_names())}}." # nolint: line_length_linter.
     ),
     class = "unknown_adapter"
   )

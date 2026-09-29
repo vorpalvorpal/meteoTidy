@@ -198,7 +198,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "meteoTidy_warning_openmeteo_unknown_unit",
       "meteoTidy_error_bom_bad_response",
       "meteoTidy_warning_bom_partial",
-      "meteoTidy_error_bom_rung_unconfigured"
+      "meteoTidy_error_bom_rung_unconfigured",
+      "meteoTidy_error_source_stale",
+      "meteoTidy_warning_eagleio_node_empty"
     ),
     meaning = c(
       "Umbrella class attached to every error raised via abort_meteo().",
@@ -276,7 +278,9 @@ inform_meteo <- function(message, ..., class = NULL, .envir = parent.frame()) {
       "Open-Meteo reported an undefined unit for a variable (the model does not provide it); the variable was skipped.",
       "A BOM response lacks a field the parser requires (e.g. metadata.issue_time).",
       "One BOM forecast product (daily or hourly) failed; the other was still archived.",
-      "A BOM transport rung is not configured for this site (e.g. no area code); skipped without a breaker strike."
+      "A BOM transport rung is not configured for this site (e.g. no area code); skipped without a breaker strike.",
+      "A source returned no data for the window: the station has stopped reporting.",
+      "Some eagle.io nodes returned no records; the others were kept."
     ),
     stringsAsFactors = FALSE
   )

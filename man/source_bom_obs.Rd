@@ -55,6 +55,7 @@ Other adapter:
 \code{\link{met_mapping}()},
 \code{\link{resolve_station}()},
 \code{\link{source_bom_forecast}()},
+\code{\link{source_eagleio}()},
 \code{\link{source_ecmwf}()},
 \code{\link{source_file}()},
 \code{\link{source_ghcnh}()},
