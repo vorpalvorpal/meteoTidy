@@ -72,13 +72,13 @@ describe("member retrievability", {
   })
 })
 
-describe("the stable signatures are snapshot-guarded", {
-  it("snapshots formals() so a breaking contract change is caught in review", {
-    expect_snapshot({
-      names(formals(met_history))
-      names(formals(met_record))
-      names(formals(met_forecast_archive))
-      names(formals(met_verification))
-    })
+# Snapshots live in plain test_that() blocks: testthat >= 3.3 keys describe()/it()
+# snapshots as "x / y" (older: "x: y"), which orphans the committed .md.
+test_that("the stable signatures are snapshot-guarded: snapshots formals() so a breaking contract change is caught in review", {
+  expect_snapshot({
+    names(formals(met_history))
+    names(formals(met_record))
+    names(formals(met_forecast_archive))
+    names(formals(met_verification))
   })
 })

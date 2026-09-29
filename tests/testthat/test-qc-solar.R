@@ -36,12 +36,12 @@ describe("qc_solar() physical limits", {
   })
 })
 
-describe("clear-sky model determinism", {
-  it("computes the same clear-sky irradiance for a fixed site/time (snapshot)", {
-    times <- c("2026-01-01 00:00:00", "2026-01-01 02:00:00",
-               "2026-01-01 04:00:00", "2026-01-01 13:00:00")
-    ghi <- clear_sky_irradiance(make_test_site(),
-                                as.POSIXct(times, tz = "UTC"))
-    expect_snapshot(round(as.numeric(ghi), 1))
-  })
+# Snapshots live in plain test_that() blocks: testthat >= 3.3 keys describe()/it()
+# snapshots as "x / y" (older: "x: y"), which orphans the committed .md.
+test_that("clear-sky model determinism: computes the same clear-sky irradiance for a fixed site/time (snapshot)", {
+  times <- c("2026-01-01 00:00:00", "2026-01-01 02:00:00",
+             "2026-01-01 04:00:00", "2026-01-01 13:00:00")
+  ghi <- clear_sky_irradiance(make_test_site(),
+                              as.POSIXct(times, tz = "UTC"))
+  expect_snapshot(round(as.numeric(ghi), 1))
 })
