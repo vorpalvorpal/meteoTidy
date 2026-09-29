@@ -246,7 +246,7 @@ source_bom_forecast <- S7::new_class(
   list(
     product = product, variables = NULL, window = NULL,
     site_id = site_id(site), source = adapter@source_id,
-    aac = site_resolved(site, c("bom", "aac")) %||% NA_character_,
+    aac = .resolved_chr(site, c("bom", "aac")),
     geohash = if (adapter@allow_web_api) .bom_geohash6(site_resolved(site, c("bom", "geohash"))) else NA
   )
 }

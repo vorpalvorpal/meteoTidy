@@ -3,26 +3,45 @@
 # (SCOPING §5.1).
 
 .bom_obs_variable_map <- function() {
-  c("temperature_2m", "wind_speed_10m", "wind_direction_10m", "relative_humidity_2m")
+  c(
+    "temperature_2m", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+    "relative_humidity_2m", "dewpoint_2m", "pressure_msl"
+  )
 }
 
-.bom_obs_ftp_url <- function(product) {
-  sprintf("https://reg.bom.gov.au/fwo/%s.json", product)
+# The rolling 72-h station JSON lives at <product>/<product>.<wmo>.json on
+# BOM's product mirror (problem 5 of the production review: the old URL had
+# no station in it and 404'd). The product is the state/region observation
+# product the station belongs to (IDN60901 for the Sydney region, which
+# includes Mount Boyce 94743 and Penrith 94763).
+.bom_obs_ftp_url <- function(product, wmo) {
+  sprintf("https://reg.bom.gov.au/fwo/%s/%s.%s.json", product, product, wmo)
 }
 
 .bom_obs_webapi_url <- function(geohash) {
-  sprintf("https://api.weather.bom.gov.au/v1/locations/%s/observations", geohash)
+  sprintf("https://api.weather.bom.gov.au/v1/locations/%s/observations", .bom_geohash6(geohash))
 }
 
 # The `ftp_feeds` rung: rolling 72-h obs JSON via `.ftp_get()` +
-# `bom_parse_72h_obs()`.
+# `bom_parse_72h_obs()`, for the station configured as
+# `resolved: bom: wmo:` (and optionally `obs_product:`).
 .bom_obs_ftp_rung <- function(request_variables_env) {
   list(
     id = "ftp_feeds",
     kind = "ftp",
     applies_to = c("obs_72h"),
     fetch_fn = function(request, now = NULL) {
-      body <- .ftp_get(.bom_obs_ftp_url("IDN60901"))
+      wmo <- request_variables_env$wmo
+      if (is.null(wmo) || is.na(wmo) || !nzchar(wmo)) {
+        abort_meteo(
+          c(
+            "No BOM observation station (WMO id) is configured for this site.",
+            "i" = "Set {.code resolved: bom: wmo:} (e.g. {.val 94743} for Mount Boyce)."
+          ),
+          class = "bom_rung_unconfigured"
+        )
+      }
+      body <- .ftp_get(.bom_obs_ftp_url(request_variables_env$product, wmo))
       bom_parse_72h_obs(
         body, request$variables,
         site_id = request_variables_env$site_id, source = request_variables_env$source_id
@@ -31,8 +50,9 @@
   )
 }
 
-# The `web_api` rung: rolling obs via `.http_get()` + `bom_parse_webapi_obs()`.
-# Only ever included in the ladder when `allow_web_api = TRUE`.
+# The `web_api` rung: the current observation via `.http_get()` +
+# `bom_parse_webapi_obs()`. Only ever included in the ladder when
+# `allow_web_api = TRUE`.
 .bom_obs_webapi_rung <- function(request_variables_env) {
   list(
     id = "web_api",
@@ -40,7 +60,11 @@
     applies_to = c("obs_72h"),
     fetch_fn = function(request, now = NULL) {
       geohash <- request_variables_env$geohash
-      body <- .http_get(.bom_obs_webapi_url(geohash))
+      if (is.null(geohash) || is.na(geohash)) {
+        abort_meteo("No BOM geohash is configured for this site.",
+                    class = "bom_rung_unconfigured")
+      }
+      body <- .http_get(.bom_obs_webapi_url(geohash), headers = .bom_webapi_headers())
       bom_parse_webapi_obs(
         body, request$variables,
         site_id = request_variables_env$site_id, source = request_variables_env$source_id
@@ -112,7 +136,12 @@ source_bom_obs <- S7::new_class(
     return(adapter@ladder)
   }
 
-  ctx <- list(site_id = site_id(site), source_id = adapter@source_id)
+  ctx <- list(
+    site_id = site_id(site), source_id = adapter@source_id,
+    wmo = .resolved_chr(site, c("bom", "wmo")),
+    product = .resolved_chr(site, c("bom", "obs_product")) %|NA|%
+      .resolved_chr(site, c("bom", "product")) %|NA|% "IDN60901"
+  )
   rungs <- list(.bom_obs_ftp_rung(ctx))
   if (adapter@allow_web_api) {
     ctx_web <- list(
@@ -130,7 +159,13 @@ S7::method(fetch, source_bom_obs) <- function(adapter, site, variables, window, 
 
   breaker <- breaker_read(adapter@store_root)
   request <- list(product = "obs_72h", variables = variables, window = window)
-  result <- ladder_fetch(ladder, request, breaker, now = now)
+  result <- tryCatch(
+    ladder_fetch(ladder, request, breaker, now = now),
+    meteoTidy_error_bom_all_transports_failed = function(cnd) {
+      breaker_write(adapter@store_root, cnd$breaker %||% breaker)
+      rlang::cnd_signal(cnd)
+    }
+  )
   breaker_write(adapter@store_root, attr(result, "breaker") %||% breaker)
 
   # `check_fetch_result()` calls `new_obs()` internally, which strips any

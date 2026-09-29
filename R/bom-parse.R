@@ -344,25 +344,32 @@ bom_parse_webapi_hourly <- function(body, site_id, source = "bom_forecast") {
 
 # ---- 72-h obs JSON -> canonical obs -------------------------------------
 
+# Numeric scalar from a JSON field that may be NULL, a number, or a numeric
+# string ("0.2"); NA otherwise.
+.bom_num <- function(x) {
+  if (is.null(x) || length(x) == 0) {
+    return(NA_real_)
+  }
+  suppressWarnings(as.numeric(x[[1]]))
+}
+
 # Map one BOM 72-h obs JSON row (a named list) to canonical (variable,
-# value, unit) triples, restricted to `variables` requested.
+# value, unit) triples, restricted to `variables` requested. Missing (null)
+# fields and "CALM" directions are skipped rather than stored as NA.
 .bom_72h_row_values <- function(row, variables) {
-  out <- list()
-  if ("temperature_2m" %in% variables && !is.null(row$air_temp)) {
-    out[["temperature_2m"]] <- list(value = as.numeric(row$air_temp), unit = "degC")
-  }
-  if ("wind_speed_10m" %in% variables && !is.null(row$wind_spd_kmh)) {
-    out[["wind_speed_10m"]] <- list(value = as.numeric(row$wind_spd_kmh), unit = "km/h")
-  }
-  if ("wind_direction_10m" %in% variables && !is.null(row$wind_dir)) {
-    out[["wind_direction_10m"]] <- list(
-      value = compass2angle(row$wind_dir), unit = "degree"
-    )
-  }
-  if ("relative_humidity_2m" %in% variables && !is.null(row$rel_hum)) {
-    out[["relative_humidity_2m"]] <- list(value = as.numeric(row$rel_hum), unit = "%")
-  }
-  out
+  spec <- list(
+    temperature_2m = list(value = .bom_num(row$air_temp), unit = "degC"),
+    wind_speed_10m = list(value = .bom_num(row$wind_spd_kmh), unit = "km/h"),
+    wind_gusts_10m = list(value = .bom_num(row$gust_kmh), unit = "km/h"),
+    wind_direction_10m = list(
+      value = if (is.null(row$wind_dir)) NA_real_ else compass2angle(row$wind_dir), unit = "degree"
+    ),
+    relative_humidity_2m = list(value = .bom_num(row$rel_hum), unit = "%"),
+    dewpoint_2m = list(value = .bom_num(row$dewpt), unit = "degC"),
+    pressure_msl = list(value = .bom_num(row$press_msl), unit = "hPa")
+  )
+  spec <- spec[intersect(names(spec), variables)]
+  Filter(function(s) length(s$value) == 1 && !is.na(s$value), spec)
 }
 
 .bom_empty_obs <- function() {
@@ -380,7 +387,7 @@ bom_parse_webapi_hourly <- function(body, site_id, source = "bom_forecast") {
   pieces <- lapply(rows, function(row) {
     datetime_utc <- time_of(row)
     values <- extract(row, variables)
-    if (length(values) == 0) {
+    if (length(values) == 0 || is.na(datetime_utc)) {
       return(NULL)
     }
     tibble::tibble(
@@ -399,15 +406,17 @@ bom_parse_webapi_hourly <- function(body, site_id, source = "bom_forecast") {
   if (length(pieces) == 0) {
     return(.bom_empty_obs())
   }
-  do.call(rbind, pieces)
+  out <- do.call(rbind, pieces)
+  out[!duplicated(out[c("datetime_utc", "variable")]), , drop = FALSE]
 }
 
 #' Parse a rolling 72-h obs JSON response into canonical obs rows
 #'
-#' `observations.data[]`: `aifstime_utc` (`yyyyMMddHHmmss` UTC), `air_temp`
-#' (degC), `wind_spd_kmh` (km/h), `wind_dir` (compass string, mapped only
-#' when `wind_direction_10m` is requested), `rel_hum` (%). `method` is
-#' always `"measured"`.
+#' `observations.data[]` (half-hourly): `aifstime_utc` (`yyyyMMddHHmmss`
+#' UTC), `air_temp` (degC), `wind_spd_kmh`/`gust_kmh` (km/h), `wind_dir`
+#' (compass string; "CALM" is skipped), `rel_hum` (%), `dewpt` (degC),
+#' `press_msl` (hPa). Null fields are skipped. `method` is always
+#' `"measured"`.
 #'
 #' @param body A parsed JSON list (already-parsed nested list, or a raw JSON
 #'   string as returned by `.ftp_get()`).
@@ -425,39 +434,39 @@ bom_parse_72h_obs <- function(body, variables, site_id, source = "bom_obs") {
   .bom_obs_rows_to_tibble(
     rows, variables,
     extract = .bom_72h_row_values,
-    time_of = function(row) .bom_parse_compact_time(row$aifstime_utc),
+    time_of = function(row) .bom_parse_compact_time(row$aifstime_utc %||% NA_character_),
     site_id = site_id, source = source
   )
 }
 
-# Map one BOM web-API obs JSON row (a named list) to canonical (variable,
-# value, unit) triples, restricted to `variables` requested.
+# Map one BOM web-API observation object to canonical (variable, value,
+# unit) triples, restricted to `variables` requested. The API reports wind
+# and gusts in km/h and direction as a compass string.
 .bom_webapi_row_values <- function(row, variables) {
-  out <- list()
-  if ("temperature_2m" %in% variables && !is.null(row$temp)) {
-    out[["temperature_2m"]] <- list(value = as.numeric(row$temp), unit = "degC")
-  }
   wind <- row$wind
-  if ("wind_speed_10m" %in% variables && !is.null(wind$speed_kilometre)) {
-    out[["wind_speed_10m"]] <- list(value = as.numeric(wind$speed_kilometre), unit = "km/h")
-  }
-  if ("wind_direction_10m" %in% variables && !is.null(wind$direction)) {
-    out[["wind_direction_10m"]] <- list(
-      value = compass2angle(wind$direction), unit = "degree"
-    )
-  }
-  if ("relative_humidity_2m" %in% variables && !is.null(row$humidity)) {
-    out[["relative_humidity_2m"]] <- list(value = as.numeric(row$humidity), unit = "%")
-  }
-  out
+  spec <- list(
+    temperature_2m = list(value = .bom_num(row$temp), unit = "degC"),
+    wind_speed_10m = list(value = .bom_num(wind$speed_kilometre), unit = "km/h"),
+    wind_gusts_10m = list(value = .bom_num(row$gust$speed_kilometre), unit = "km/h"),
+    wind_direction_10m = list(
+      value = if (is.null(wind$direction)) NA_real_ else compass2angle(wind$direction),
+      unit = "degree"
+    ),
+    relative_humidity_2m = list(value = .bom_num(row$humidity), unit = "%")
+  )
+  spec <- spec[intersect(names(spec), variables)]
+  Filter(function(s) length(s$value) == 1 && !is.na(s$value), spec)
 }
 
 #' Parse a web-API obs JSON response into canonical obs rows
 #'
-#' `data[]`: `time` (ISO8601 UTC string), `temp` (degC), nested
-#' `wind.speed_kilometre` (km/h) / `wind.direction` (compass string, mapped
-#' only when `wind_direction_10m` is requested), `humidity` (%). `method` is
-#' always `"measured"`.
+#' `api.weather.bom.gov.au/v1/locations/<geohash>/observations` returns ONE
+#' current observation: `data` is a single object (`temp`, `humidity`,
+#' `wind.speed_kilometre`/`wind.direction`, `gust.speed_kilometre`, ...) and
+#' its time is `metadata.observation_time` (UTC). Problem 5 of the production
+#' review: the previous parser expected a `data[]` array of rows with their
+#' own `time`, so the real response produced nothing. The array shape is
+#' still accepted. `method` is always `"measured"`.
 #'
 #' @inheritParams bom_parse_72h_obs
 #' @return A canonical obs tibble (see the internal `new_obs()`).
@@ -465,12 +474,15 @@ bom_parse_72h_obs <- function(body, variables, site_id, source = "bom_obs") {
 #' @noRd
 bom_parse_webapi_obs <- function(body, variables, site_id, source = "bom_obs") {
   parsed <- .bom_as_parsed_json(body)
-  rows <- parsed$data %||% list()
+  data <- parsed$data %||% list()
+  single <- !is.null(names(data))
+  rows <- if (single) list(data) else data
+  obs_time <- parsed$metadata$observation_time %||% NA_character_
 
   .bom_obs_rows_to_tibble(
     rows, variables,
     extract = .bom_webapi_row_values,
-    time_of = function(row) .bom_parse_utc_time(row$time),
+    time_of = function(row) .bom_parse_utc_time(if (single) obs_time else row$time %||% NA_character_),
     site_id = site_id, source = source
   )
 }

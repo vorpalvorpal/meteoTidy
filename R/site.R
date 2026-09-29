@@ -341,3 +341,10 @@ assign_at_path <- function(x, path, value) {
   x[[head]] <- assign_at_path(x[[head]], path[-1], value)
   x
 }
+
+# A resolved-cache value as a single string, NA when absent (site_resolved()
+# returns NULL or NA for a missing key depending on the path).
+.resolved_chr <- function(site, path) {
+  x <- site_resolved(site, path)
+  if (is.null(x) || length(x) == 0 || is.na(x[[1]])) NA_character_ else as.character(x[[1]])
+}
