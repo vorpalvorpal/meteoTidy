@@ -254,8 +254,11 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
 # Open-Meteo's metadata reports it (`data_end_time`). A run whose end is
 # unknown, or whose stored copy stops short (a fetch that caught a partial
 # run), is downloaded again; the store's row-level dedup keeps only what is
-# new. best_match has no run to check and is always fetched.
-.openmeteo_run_stored <- function(site, source_id, model, run) {
+# new. `window_end` is the last valid time the request asks for: a model whose
+# run extends past it (GEM runs 16 days against a 15-day request) is complete
+# once the store reaches the earlier of the two. best_match has no run to
+# check and is always fetched.
+.openmeteo_run_stored <- function(site, source_id, model, run, window_end = NULL) {
   root <- site_store_root(site)
   if (identical(model, "best_match") || is.na(run$data_end) ||
         length(root) != 1 || is.na(root) || !nzchar(root) || !dir.exists(root)) {
@@ -270,7 +273,17 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
     return(FALSE)
   }
   stored <- stored[stored$model %in% model & stored$issue_time == run$issue_time, , drop = FALSE]
-  nrow(stored) > 0 && max(stored$valid_time) >= run$data_end - 6 * 3600
+  target <- if (is.null(window_end)) run$data_end else min(run$data_end, window_end)
+  nrow(stored) > 0 && max(stored$valid_time) >= target - 6 * 3600
+}
+
+# The last valid time a live-horizon request can reach. Open-Meteo counts
+# `forecast_days` whole UTC days from the start of the day of the request, and
+# a run cannot reach further than `forecast_days` past its own initialisation.
+.openmeteo_window_end <- function(now, issue_time, product, forecast_days = NULL) {
+  days <- forecast_days %||% .openmeteo_default_forecast_days(product)
+  day_start <- as.POSIXct(format(now, "%Y-%m-%d", tz = "UTC"), tz = "UTC")
+  min(day_start + days * 86400 - 3600, issue_time + days * 86400)
 }
 
 # best_match blends several models, so its issue_time (the 6-hourly cycle
@@ -312,7 +325,8 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   if (product %in% .openmeteo_horizon_products()) {
     run <- .openmeteo_run_meta(product, model, key, now)
     issue_time <- run$issue_time
-    if (.openmeteo_run_stored(site, adapter@source_id, model_label, run)) {
+    if (.openmeteo_run_stored(site, adapter@source_id, model_label, run,
+                            .openmeteo_window_end(now, issue_time, product, forecast_days))) {
       out <- .empty_forecast()
       attr(out, "already_stored") <- sprintf(
         "%s run %s", model_label, format(issue_time, "%Y-%m-%d %H:%M UTC", tz = "UTC")
