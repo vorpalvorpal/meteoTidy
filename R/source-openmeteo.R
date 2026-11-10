@@ -277,12 +277,13 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   nrow(stored) > 0 && max(stored$valid_time) >= target - 6 * 3600
 }
 
-# The last hour a live-horizon request covers: Open-Meteo counts `forecast_days`
-# whole UTC days from the start of the day of the request.
-.openmeteo_window_end <- function(now, product, forecast_days = NULL) {
+# The last valid time a live-horizon request can reach. Open-Meteo counts
+# `forecast_days` whole UTC days from the start of the day of the request, and
+# a run cannot reach further than `forecast_days` past its own initialisation.
+.openmeteo_window_end <- function(now, issue_time, product, forecast_days = NULL) {
   days <- forecast_days %||% .openmeteo_default_forecast_days(product)
-  start <- as.POSIXct(format(now, "%Y-%m-%d", tz = "UTC"), tz = "UTC")
-  start + days * 86400 - 3600
+  day_start <- as.POSIXct(format(now, "%Y-%m-%d", tz = "UTC"), tz = "UTC")
+  min(day_start + days * 86400 - 3600, issue_time + days * 86400)
 }
 
 # best_match blends several models, so its issue_time (the 6-hourly cycle
@@ -325,7 +326,7 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
     run <- .openmeteo_run_meta(product, model, key, now)
     issue_time <- run$issue_time
     if (.openmeteo_run_stored(site, adapter@source_id, model_label, run,
-                            .openmeteo_window_end(now, product, forecast_days))) {
+                            .openmeteo_window_end(now, issue_time, product, forecast_days))) {
       out <- .empty_forecast()
       attr(out, "already_stored") <- sprintf(
         "%s run %s", model_label, format(issue_time, "%Y-%m-%d %H:%M UTC", tz = "UTC")
