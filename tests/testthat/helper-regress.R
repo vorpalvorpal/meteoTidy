@@ -93,6 +93,8 @@ openmeteo_routes <- function() {
     "ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json" =
       "openmeteo/meta-ecmwf_ifs025_ensemble.json",
     "/data/ecmwf_ifs025/static/meta.json" = "openmeteo/meta-ecmwf_ifs025.json",
+    "ensemble-api.*/data/dwd_icon_global_eps_native/static/meta.json" =
+      "openmeteo/meta-dwd_icon_eps.json",
     "ensemble-api.*/data/dwd_icon_eps/static/meta.json" = "openmeteo/meta-dwd_icon_eps.json",
     "/data/ncep_gfs025/static/meta.json" = "openmeteo/meta-ncep_gfs025.json",
     "/data/dwd_icon/static/meta.json" = "openmeteo/meta-dwd_icon.json",
