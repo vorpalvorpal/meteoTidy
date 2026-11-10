@@ -1,4 +1,21 @@
-# meteoTidy 0.0.0.9001 (development version)
+# meteoTidy 0.0.0.9002 (development version)
+
+## Open-Meteo ensemble archiving
+
+- **ICON ensemble run times come from the native-grid dataset**
+  (`dwd_icon_global_eps_native`); the old `dwd_icon_eps` metadata no longer
+  updates, so ICON had silently stopped archiving.
+- **UKMO's ensemble metadata is `ukmo_global_ensemble_20km`** (no
+  `_ensemble` suffix), so UKMO runs can be archived. `ecmwf_ifs01` (the
+  0.1 degree ECMWF ensemble) is mapped to `ecmwf_ifs01_ensemble`.
+- **GEM no longer requests `wind_gusts_10m`**, which Open-Meteo returns
+  all-null for it.
+- **A run longer than the request counts as stored.** The check compares the
+  archive with the earlier of the run's end and the end of the requested
+  `forecast_days` window, so GEM (16-day data, 15-day request) is not
+  re-downloaded every hour.
+
+# meteoTidy 0.0.0.9001
 
 Follow-up to the production review.
 
