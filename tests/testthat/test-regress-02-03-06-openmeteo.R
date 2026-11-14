@@ -173,7 +173,7 @@ describe("problem 6: ensemble", {
       .package = "httr2"
     )
     local_mocked_bindings(.http_sleep = function(seconds) slept <<- c(slept, seconds))
-    out <- .http_get("https://api.open-meteo.com/data/ecmwf_ifs025/static/meta.json")
+    out <- .http_get("https://openmeteo.s3.amazonaws.com/data/ecmwf_ifs025/static/meta.json")
     expect_equal(out$last_run_initialisation_time, 1790618400)
     expect_equal(slept, c(7, 4))
   })
@@ -187,7 +187,7 @@ describe("problem 3 (found in the live acceptance run): unknown run time", {
     site <- make_prod_site("kat")
     adapter <- source_openmeteo(product = "ensemble", models = "ecmwf_ifs025", provides = "temperature_2m")
     routes <- openmeteo_routes()
-    routes[["ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- 503
+    routes[["openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- 503
     err <- tryCatch(
       with_routed_http(routes, {
         fetch_forecast(adapter, site, "temperature_2m", issue_window_for(prod_now()), now = prod_now())

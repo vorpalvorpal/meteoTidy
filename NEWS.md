@@ -59,6 +59,15 @@ Follow-up to the production review.
 
 ## Fixes
 
+- **Open-Meteo run times come from S3.** Open-Meteo's free hosts stopped
+  serving model metadata (404 for every model; production syncs failed with
+  `openmeteo_run_unknown` from 2026-11-13). Without an API key
+  the metadata is now read from `https://openmeteo.s3.amazonaws.com/`.
+  S3 announces a run up to ~30 minutes before the API hosts serve it, so a
+  run less than an hour old (option `meteoTidy.openmeteo_s3_grace_secs`,
+  default 3600, `0` disables) is not downloaded yet; the sync status says
+  "waiting for Open-Meteo API: ..." and is not a failure. A commercial key
+  still uses its `customer-` host, with no grace period.
 - **Long Windows paths lost data silently.** A store whose part-file paths
   exceed Windows' 259-character limit (after 8.3 short names are expanded)
   wrote files that read back empty. Paths are now checked before writing

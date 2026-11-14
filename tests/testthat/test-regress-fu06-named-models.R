@@ -39,8 +39,8 @@ describe("item 6: named Open-Meteo models with real run times", {
     expect_equal(issue("ecmwf_ifs025"), fu06_init("ecmwf_ifs025"))
     expect_equal(issue("gfs_global"), fu06_init("ncep_gfs025"))
     expect_equal(issue("icon_global"), fu06_init("dwd_icon"))
-    expect_true(any(grepl("/data/ncep_gfs025/static/meta.json", cap$urls)))
-    expect_true(any(grepl("/data/dwd_icon/static/meta.json", cap$urls)))
+    expect_true(any(grepl("openmeteo.s3.amazonaws.com/data/ncep_gfs025/static/meta.json", cap$urls)))
+    expect_true(any(grepl("openmeteo.s3.amazonaws.com/data/dwd_icon/static/meta.json", cap$urls)))
   })
 
   it("flags a configured best_match as having no verifiable run time", {
@@ -56,7 +56,7 @@ describe("item 6: named Open-Meteo models with real run times", {
 
   it("keeps the other models when one model's run time is unknown", {
     routes <- openmeteo_routes()
-    routes[["/data/ncep_gfs025/static/meta.json"]] <- 503
+    routes[["openmeteo\\.s3\\.amazonaws\\.com/data/ncep_gfs025/static/meta.json"]] <- 503
     expect_warning(
       fc <- with_routed_http(routes, {
         fetch_forecast(source_openmeteo("forecast"), make_prod_site("kat"), "temperature_2m",

@@ -87,15 +87,38 @@ with_routed_http <- function(routes, expr, capture = new.env()) {
   force(expr)
 }
 
-# Routes serving the recorded Open-Meteo responses.
+# A recorded model-metadata response, with `last_run_availability_time`
+# lowered to at least `age_secs` before prod_now(). Two recordings (GFS, ICON)
+# were taken within minutes of the run being published, so their availability
+# times sit inside (or after) the S3 grace period of prod_now(); the tests
+# that use them are about run times, not the grace period, so they are
+# served as if the run had been available for a while.
+meta_route <- function(file, age_secs = 4 * 3600) {
+  force(file)
+  function(url) {
+    meta <- jsonlite::read_json(fixture_path(file))
+    latest <- as.numeric(prod_now()) - age_secs
+    if (!is.null(meta$last_run_availability_time)) {
+      meta$last_run_availability_time <- min(meta$last_run_availability_time, latest)
+    }
+    meta
+  }
+}
+
+# Routes serving the recorded Open-Meteo responses. Free-tier model metadata
+# comes from the S3 mirror (the free API hosts no longer serve it).
 openmeteo_routes <- function() {
   list(
-    "ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json" =
-      "openmeteo/meta-ecmwf_ifs025_ensemble.json",
-    "/data/ecmwf_ifs025/static/meta.json" = "openmeteo/meta-ecmwf_ifs025.json",
-    "ensemble-api.*/data/dwd_icon_eps/static/meta.json" = "openmeteo/meta-dwd_icon_eps.json",
-    "/data/ncep_gfs025/static/meta.json" = "openmeteo/meta-ncep_gfs025.json",
-    "/data/dwd_icon/static/meta.json" = "openmeteo/meta-dwd_icon.json",
+    "openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025_ensemble/static/meta.json" =
+      meta_route("openmeteo/meta-ecmwf_ifs025_ensemble.json"),
+    "openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025/static/meta.json" =
+      meta_route("openmeteo/meta-ecmwf_ifs025.json"),
+    "openmeteo\\.s3\\.amazonaws\\.com/data/dwd_icon_eps/static/meta.json" =
+      meta_route("openmeteo/meta-dwd_icon_eps.json"),
+    "openmeteo\\.s3\\.amazonaws\\.com/data/ncep_gfs025/static/meta.json" =
+      meta_route("openmeteo/meta-ncep_gfs025.json"),
+    "openmeteo\\.s3\\.amazonaws\\.com/data/dwd_icon/static/meta.json" =
+      meta_route("openmeteo/meta-dwd_icon.json"),
     "ensemble-api\\.open-meteo\\.com/v1/ensemble.*models=icon_seamless" =
       "openmeteo/ensemble-icon-seamless-15d.json",
     "ensemble-api\\.open-meteo\\.com/v1/ensemble" = "openmeteo/ensemble-ecmwf-ifs025-15d.json",
