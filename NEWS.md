@@ -1,4 +1,33 @@
-# meteoTidy 0.0.0.9001 (development version)
+# meteoTidy 0.0.0.9002 (development version)
+
+## Open-Meteo ensemble archiving
+
+- **ICON ensemble run times come from the native-grid dataset**
+  (`dwd_icon_global_eps_native`); the old `dwd_icon_eps` metadata no longer
+  updates, so ICON had silently stopped archiving.
+- **UKMO's ensemble metadata is `ukmo_global_ensemble_20km`** (no
+  `_ensemble` suffix), so UKMO runs can be archived. `ecmwf_ifs01` (the
+  0.1 degree ECMWF ensemble) is mapped to `ecmwf_ifs01_ensemble`.
+- **GEM no longer requests `wind_gusts_10m`**, which Open-Meteo returns
+  all-null for it.
+- **A run longer than the request counts as stored.** The check compares the
+  archive with the earlier of the run's end and the end of the requested
+  `forecast_days` window, so GEM (16-day data, 15-day request) is not
+  re-downloaded every hour.
+
+## Open-Meteo metadata
+
+- **Open-Meteo run times come from S3.** Open-Meteo's free hosts stopped
+  serving model metadata (404 for every model; production syncs failed with
+  `openmeteo_run_unknown` from 2026-11-13). Without an API key
+  the metadata is now read from `https://openmeteo.s3.amazonaws.com/`.
+  S3 announces a run up to ~30 minutes before the API hosts serve it, so a
+  run less than an hour old (option `meteoTidy.openmeteo_s3_grace_secs`,
+  default 3600, `0` disables) is not downloaded yet; the sync status says
+  "waiting for Open-Meteo API: ..." and is not a failure. A commercial key
+  still uses its `customer-` host, with no grace period.
+
+# meteoTidy 0.0.0.9001
 
 Follow-up to the production review.
 
@@ -59,15 +88,6 @@ Follow-up to the production review.
 
 ## Fixes
 
-- **Open-Meteo run times come from S3.** Open-Meteo's free hosts stopped
-  serving model metadata (404 for every model; production syncs failed with
-  `openmeteo_run_unknown` from 2026-11-13). Without an API key
-  the metadata is now read from `https://openmeteo.s3.amazonaws.com/`.
-  S3 announces a run up to ~30 minutes before the API hosts serve it, so a
-  run less than an hour old (option `meteoTidy.openmeteo_s3_grace_secs`,
-  default 3600, `0` disables) is not downloaded yet; the sync status says
-  "waiting for Open-Meteo API: ..." and is not a failure. A commercial key
-  still uses its `customer-` host, with no grace period.
 - **Long Windows paths lost data silently.** A store whose part-file paths
   exceed Windows' 259-character limit (after 8.3 short names are expanded)
   wrote files that read back empty. Paths are now checked before writing

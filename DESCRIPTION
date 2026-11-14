@@ -1,6 +1,6 @@
 Package: meteoTidy
 Title: Quality Control, Correction, and Archiving of Meteorological Data
-Version: 0.0.0.9001
+Version: 0.0.0.9002
 Authors@R: c(
     person("Robin", "Shannon", , "32329438+vorpalvorpal@users.noreply.github.com",
            role = c("aut", "cre")),

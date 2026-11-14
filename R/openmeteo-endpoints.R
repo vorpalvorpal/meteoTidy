@@ -182,7 +182,7 @@
 }
 
 # Variables a model does not produce on Open-Meteo (it answers with unit
-# "undefined" and all-null values), checked live at Katoomba 2026-09-29.
+# "undefined" or all-null values: ICON and GEM ensemble wind gusts included).
 # They are left out of that model's request instead of being fetched and
 # skipped with a warning on every sync (item 9). Other models: request all.
 .openmeteo_model_unsupported <- function(product, model) {
@@ -192,6 +192,7 @@
   if (identical(product, "ensemble")) {
     return(switch(model,
       icon_seamless = "wind_gusts_10m",
+      gem_global = "wind_gusts_10m",
       character(0)
     ))
   }
@@ -209,8 +210,10 @@
 }
 
 # The metadata dataset name for a model, used to look up its latest run's
-# initialisation time at <host>/data/<name>/static/meta.json. Ensemble
-# datasets carry a suffix; unknown models fall back to their own id (and, if
+# initialisation time at <host>/data/<name>/static/meta.json. Most ensemble
+# datasets carry an `_ensemble` suffix, but ICON's lives under the native-grid
+# dataset (the old dwd_icon_eps meta is frozen) and UKMO's has no suffix.
+# Unknown models fall back to their own id plus the suffix (and, if
 # that has no metadata, to the run-cycle floor in .openmeteo_issue_time()).
 .openmeteo_meta_name <- function(product, model) {
   if (identical(product, "ensemble")) {
@@ -219,8 +222,10 @@
       ecmwf_aifs025 = "ecmwf_aifs025_ensemble",
       gfs025 = "ncep_gefs025",
       gfs05 = "ncep_gefs05",
-      icon_seamless = "dwd_icon_eps",
+      ecmwf_ifs01 = "ecmwf_ifs01_ensemble",
+      icon_seamless = "dwd_icon_global_eps_native",
       gem_global = "cmc_gem_geps",
+      ukmo_global_ensemble_20km = "ukmo_global_ensemble_20km",
       bom_access_global_ensemble = "bom_access_global_ensemble"
     )
     return(unname(known[model]) %|NA|% paste0(model, "_ensemble"))

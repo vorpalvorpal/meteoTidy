@@ -113,6 +113,8 @@ openmeteo_routes <- function() {
       meta_route("openmeteo/meta-ecmwf_ifs025_ensemble.json"),
     "openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025/static/meta.json" =
       meta_route("openmeteo/meta-ecmwf_ifs025.json"),
+    "openmeteo\\.s3\\.amazonaws\\.com/data/dwd_icon_global_eps_native/static/meta.json" =
+      meta_route("openmeteo/meta-dwd_icon_eps.json"),
     "openmeteo\\.s3\\.amazonaws\\.com/data/dwd_icon_eps/static/meta.json" =
       meta_route("openmeteo/meta-dwd_icon_eps.json"),
     "openmeteo\\.s3\\.amazonaws\\.com/data/ncep_gfs025/static/meta.json" =

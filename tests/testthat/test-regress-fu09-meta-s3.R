@@ -67,7 +67,7 @@ describe("item 9 (metadata on S3): metadata URL", {
     expect_equal(.openmeteo_meta_url("ensemble", "ecmwf_ifs025"),
                  "https://openmeteo.s3.amazonaws.com/data/ecmwf_ifs025_ensemble/static/meta.json")
     expect_equal(.openmeteo_meta_url("ensemble", "icon_seamless"),
-                 "https://openmeteo.s3.amazonaws.com/data/dwd_icon_eps/static/meta.json")
+                 "https://openmeteo.s3.amazonaws.com/data/dwd_icon_global_eps_native/static/meta.json")
   })
 
   it("keeps the customer host and key when a key is set", {
