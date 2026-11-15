@@ -17,10 +17,13 @@
 
 ## Open-Meteo metadata
 
-- **Open-Meteo run times come from S3.** Open-Meteo's free hosts stopped
-  serving model metadata (404 for every model; production syncs failed with
-  `openmeteo_run_unknown` from 2026-11-13). Without an API key
-  the metadata is now read from `https://openmeteo.s3.amazonaws.com/`.
+- **Open-Meteo run times come from S3.** One of the free API's servers
+  answered 404 for every model's metadata while the others answered 200
+  (open-meteo/open-meteo#2330), and a resolver that sent
+  `api.open-meteo.com` only to that server made every named-model sync fail
+  with `openmeteo_run_unknown` from 2026-11-13. Without an API key the
+  metadata is now read from `https://openmeteo.s3.amazonaws.com/`, which
+  does not depend on which API server answers.
   S3 announces a run up to ~30 minutes before the API hosts serve it, so a
   run less than an hour old (option `meteoTidy.openmeteo_s3_grace_secs`,
   default 3600, `0` disables) is not downloaded yet; the sync status says
