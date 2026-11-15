@@ -37,7 +37,8 @@ sync status reports it as "already archived".
 
 Free-tier run times are read from Open-Meteo's metadata on its S3 mirror
 (\verb{https://openmeteo.s3.amazonaws.com/data/<model>/static/meta.json}),
-because the free API hosts no longer serve it; a commercial key uses
+so they do not depend on which free API server answers (one returned
+404 for every model in November 2026); a commercial key uses
 the \verb{customer-} host. S3 announces a run up to about 30 minutes before
 the API hosts serve it, so a run whose metadata \code{last_run_availability_time}
 is less than the grace period old is not downloaded yet (it is not an
