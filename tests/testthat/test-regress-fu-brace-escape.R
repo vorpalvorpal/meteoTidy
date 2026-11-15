@@ -14,7 +14,7 @@ describe("brace escaping in upstream error text", {
 
   it("keeps braces from a failed Open-Meteo metadata request", {
     routes <- openmeteo_routes()
-    routes[["/data/ecmwf_ifs025/static/meta.json"]] <- function(url) {
+    routes[["openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025/static/meta.json"]] <- function(url) {
       abort_meteo("HTTP 400 {{\"reason\": \"bad\"}}", class = "http_client_error")
     }
     err <- tryCatch(

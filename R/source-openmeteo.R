@@ -58,6 +58,17 @@
 #'   already archived in full in the site's store (rows reaching to within
 #'   6 h of the metadata's `data_end_time`) is not downloaded again; the
 #'   sync status reports it as "already archived".
+#'
+#'   Free-tier run times are read from Open-Meteo's metadata on its S3 mirror
+#'   (`https://openmeteo.s3.amazonaws.com/data/<model>/static/meta.json`),
+#'   because the free API hosts no longer serve it; a commercial key uses
+#'   the `customer-` host. S3 announces a run up to about 30 minutes before
+#'   the API hosts serve it, so a run whose metadata `last_run_availability_time`
+#'   is less than the grace period old is not downloaded yet (it is not an
+#'   error): the sync status reports it as "waiting for Open-Meteo API" and
+#'   the next sync fetches it. The grace period is 3600 seconds, set by the
+#'   option `meteoTidy.openmeteo_s3_grace_secs` (read on every call; `0`
+#'   disables it). It does not apply with a commercial key.
 #' @param provides Optional character vector narrowing the variables this
 #'   adapter requests (e.g. from site YAML). Defaults to every hourly
 #'   dictionary variable Open-Meteo serves (a smaller set for `"ensemble"`).
@@ -232,6 +243,7 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
     )
   }
   already <- unlist(lapply(pieces, attr, "already_stored"))
+  pending <- unlist(lapply(pieces, attr, "run_pending"))
   out <- vctrs::vec_rbind(!!!pieces)
   if (is.null(out)) {
     out <- new_forecast(.empty_forecast())
@@ -243,6 +255,9 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   }
   if (length(already) > 0) {
     attr(out, "already_stored") <- already
+  }
+  if (length(pending) > 0) {
+    attr(out, "run_pending") <- pending
   }
   out
 }
@@ -325,6 +340,13 @@ S7::method(fetch_forecast, source_openmeteo) <- function(
   if (product %in% .openmeteo_horizon_products()) {
     run <- .openmeteo_run_meta(product, model, key, now)
     issue_time <- run$issue_time
+    if (isTRUE(run$pending)) {
+      out <- .empty_forecast()
+      attr(out, "run_pending") <- sprintf(
+        "%s run %s", model_label, format(issue_time, "%Y-%m-%d %H:%M UTC", tz = "UTC")
+      )
+      return(out)
+    }
     if (.openmeteo_run_stored(site, adapter@source_id, model_label, run,
                             .openmeteo_window_end(now, issue_time, product, forecast_days))) {
       out <- .empty_forecast()

@@ -7,7 +7,12 @@
 
 iso_routes <- function(openmeteo_down = TRUE) {
   c(
-    if (openmeteo_down) list("open-meteo\\.com" = 404L) else openmeteo_routes(),
+    # Open-Meteo down: its API hosts and the S3 mirror its metadata comes from.
+    if (openmeteo_down) {
+      list("open-meteo\\.com|openmeteo\\.s3\\.amazonaws\\.com" = 404L)
+    } else {
+      openmeteo_routes()
+    },
     list(
       "api\\.weather\\.bom\\.gov\\.au/v1/locations/r64bhq/forecasts/daily" = "bom/webapi-daily-r64bhq.json",
       "api\\.weather\\.bom\\.gov\\.au/v1/locations/r64bhq/forecasts/hourly" = "bom/webapi-hourly-r64bhq.json",

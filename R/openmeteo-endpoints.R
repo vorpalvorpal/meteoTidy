@@ -246,15 +246,27 @@
 
 `%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
 
-# The metadata URL for a model's latest run. With a commercial key it goes to
-# the customer- host and carries the key, like every data request (item 8).
+# The metadata URL for a model's latest run. Open-Meteo's free hosts stopped
+# serving metadata (404 by 2026-11-13), so without a key it comes from the
+# S3 mirror; with a commercial key it goes to the customer- host and carries
+# the key, like every data request (item 8).
 .openmeteo_meta_url <- function(product, model, api_key = NULL) {
+  name <- .openmeteo_meta_name(product, model)
+  if (is.null(api_key)) {
+    return(sprintf("https://openmeteo.s3.amazonaws.com/data/%s/static/meta.json", name))
+  }
   spec <- .openmeteo_endpoint_path(product)
-  has_key <- !is.null(api_key)
-  subdomain <- if (has_key) paste0("customer-", spec$subdomain) else spec$subdomain
-  url <- sprintf("https://%s.open-meteo.com/data/%s/static/meta.json",
-                 subdomain, .openmeteo_meta_name(product, model))
-  if (has_key) paste0(url, "?", .openmeteo_build_query_string(list(apikey = api_key))) else url
+  url <- sprintf("https://customer-%s.open-meteo.com/data/%s/static/meta.json",
+                 spec$subdomain, name)
+  paste0(url, "?", .openmeteo_build_query_string(list(apikey = api_key)))
+}
+
+# Seconds a run published to S3 must age before it is downloaded: S3 announces
+# a run up to ~30 min before the API hosts serve it. Read on every call; 0
+# disables.
+.openmeteo_s3_grace_secs <- function() {
+  g <- getOption("meteoTidy.openmeteo_s3_grace_secs", 3600)
+  if (is.numeric(g) && length(g) == 1 && !is.na(g)) g else 3600
 }
 
 # Floor a time to the start of its 6-hourly NWP run cycle (00/06/12/18 UTC).
@@ -283,14 +295,17 @@
 
 # The run about to be fetched: its issue time and, when Open-Meteo reports
 # it, `data_end` (the last valid time the run is known to cover; NA when
-# unknown). Used by .openmeteo_issue_time() and to skip re-downloading a run
-# already archived (item 7).
+# unknown) and `pending` (TRUE when the metadata came from S3 and the run is
+# inside the grace period). Used by .openmeteo_issue_time(), to skip
+# re-downloading a run already archived (item 7), and to hold back a run the
+# API hosts may not serve yet.
 .openmeteo_run_meta <- function(product, model, api_key, now) {
   if (is.null(model) || identical(model, "best_match") ||
         !(product %in% .openmeteo_horizon_products())) {
     # best_match blends several models, so it has no single run: the
     # 6-hourly cycle floor is the documented convention.
-    return(list(issue_time = .floor_run_cycle(now), data_end = as.POSIXct(NA, tz = "UTC")))
+    return(list(issue_time = .floor_run_cycle(now), data_end = as.POSIXct(NA, tz = "UTC"),
+                pending = FALSE))
   }
   # A named model must be stamped with its real run. Guessing (the clock's
   # 6 h floor) mislabelled ECMWF's 18 UTC ensemble as 06 UTC in a live run;
@@ -316,5 +331,15 @@
   }
   end <- if (is.list(meta)) suppressWarnings(as.numeric(meta$data_end_time)) else NA
   end <- if (length(end) == 1 && !is.na(end)) end else NA_real_
-  list(issue_time = init, data_end = as.POSIXct(end, origin = "1970-01-01", tz = "UTC"))
+  # Metadata from S3 (no key) can run ahead of the API hosts: a run made
+  # available less than the grace period ago is pending, not yet fetchable.
+  pending <- FALSE
+  if (is.null(api_key)) {
+    avail <- if (is.list(meta)) suppressWarnings(as.numeric(meta$last_run_availability_time)) else NA
+    if (length(avail) == 1 && !is.na(avail)) {
+      pending <- as.numeric(now) - avail < .openmeteo_s3_grace_secs()
+    }
+  }
+  list(issue_time = init, data_end = as.POSIXct(end, origin = "1970-01-01", tz = "UTC"),
+       pending = pending)
 }

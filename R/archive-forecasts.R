@@ -72,9 +72,11 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
   # feed is recorded as that source's failure and the others still archive.
   rows <- lapply(sources, function(source) {
     already <- NULL
+    pending <- NULL
     row <- .run_source("forecast", source, {
       fc <- .acquire_forecast(source, site, window, now = now)
       already <- attr(fc, "already_stored")
+      pending <- attr(fc, "run_pending")
       aux <- attr(fc, "aux")
       if (nrow(fc) > 0) {
         store_write_forecast(store_root, fc, now = now)
@@ -86,8 +88,15 @@ archive_forecasts <- function(store_root, site, sources, now = .now(), missed = 
     })
     # Runs the adapter skipped because they are already archived in full
     # (item 7) are reported, so a zero-row "ok" is not mistaken for no data.
-    if (length(already) > 0 && row$status == "ok") {
-      note <- paste0("already archived: ", paste(already, collapse = ", "))
+    # Runs on S3 but not yet served by the API hosts are waiting (item 9).
+    notes <- c(
+      if (length(already) > 0) paste0("already archived: ", paste(already, collapse = ", ")),
+      if (length(pending) > 0) {
+        paste0("waiting for Open-Meteo API: ", paste(pending, collapse = ", "))
+      }
+    )
+    if (length(notes) > 0 && row$status == "ok") {
+      note <- paste(notes, collapse = "; ")
       row$message <- if (is.na(row$message)) note else paste(row$message, note, sep = "; ")
     }
     row

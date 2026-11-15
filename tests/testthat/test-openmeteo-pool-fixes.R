@@ -92,7 +92,7 @@ describe("a run longer than the requested window counts as stored", {
     meta <- jsonlite::read_json(fixture_path("openmeteo/meta-ecmwf_ifs025_ensemble.json"))
     meta$data_end_time <- as.numeric(as.POSIXct(end_utc, tz = "UTC"))
     routes <- openmeteo_routes()
-    routes <- c(list("ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json" =
+    routes <- c(list("openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025_ensemble/static/meta.json" =
                        function(url) meta), routes)
     routes
   }

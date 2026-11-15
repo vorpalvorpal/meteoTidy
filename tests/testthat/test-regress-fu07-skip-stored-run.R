@@ -40,7 +40,7 @@ describe("item 7: skip the download of a run already stored", {
     st2 <- fu07_sync(root, prod_now() + 3600, capture = cap2)
     expect_equal(st2$status, "ok")
     expect_equal(ensemble_calls(cap2), 0)
-    expect_true(any(grepl("ecmwf_ifs025_ensemble/static/meta.json", cap2$urls)))
+    expect_true(any(grepl("openmeteo.s3.amazonaws.com/data/ecmwf_ifs025_ensemble/static/meta.json", cap2$urls)))
     expect_match(st2$sources[[1]]$message, "already archived")
     expect_equal(nrow(store_read_forecast(root, "kat")), n1)
   })
@@ -65,7 +65,7 @@ describe("item 7: skip the download of a run already stored", {
     meta <- jsonlite::read_json(fixture_path("openmeteo/meta-ecmwf_ifs025_ensemble.json"))
     meta$last_run_initialisation_time <- meta$last_run_initialisation_time + 12 * 3600
     routes <- openmeteo_routes()
-    routes[["ensemble-api.*/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- function(url) meta
+    routes[["openmeteo\\.s3\\.amazonaws\\.com/data/ecmwf_ifs025_ensemble/static/meta.json"]] <- function(url) meta
     cap <- new.env()
     fu07_sync(root, prod_now() + 3600, routes = routes, capture = cap)
     expect_equal(ensemble_calls(cap), 1)

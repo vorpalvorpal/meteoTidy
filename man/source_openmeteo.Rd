@@ -33,7 +33,18 @@ several models fails, the others are still returned, with a warning of
 class \code{meteoTidy_warning_openmeteo_model_failed}. A named model's run
 already archived in full in the site's store (rows reaching to within
 6 h of the metadata's \code{data_end_time}) is not downloaded again; the
-sync status reports it as "already archived".}
+sync status reports it as "already archived".
+
+Free-tier run times are read from Open-Meteo's metadata on its S3 mirror
+(\verb{https://openmeteo.s3.amazonaws.com/data/<model>/static/meta.json}),
+because the free API hosts no longer serve it; a commercial key uses
+the \verb{customer-} host. S3 announces a run up to about 30 minutes before
+the API hosts serve it, so a run whose metadata \code{last_run_availability_time}
+is less than the grace period old is not downloaded yet (it is not an
+error): the sync status reports it as "waiting for Open-Meteo API" and
+the next sync fetches it. The grace period is 3600 seconds, set by the
+option \code{meteoTidy.openmeteo_s3_grace_secs} (read on every call; \code{0}
+disables it). It does not apply with a commercial key.}
 
 \item{api_key_env}{Optional single string: the \emph{name} of an environment
 variable holding a commercial Open-Meteo API key. See Licensing above.}
