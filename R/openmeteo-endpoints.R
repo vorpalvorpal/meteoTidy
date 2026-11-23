@@ -246,10 +246,11 @@
 
 `%|NA|%` <- function(x, y) if (length(x) == 0 || is.na(x)) y else x
 
-# The metadata URL for a model's latest run. Open-Meteo's free hosts stopped
-# serving metadata (404 by 2026-11-13), so without a key it comes from the
-# S3 mirror; with a commercial key it goes to the customer- host and carries
-# the key, like every data request (item 8).
+# The metadata URL for a model's latest run. Without a key it comes from the
+# S3 mirror: a single faulty free API server answering 404 for every model
+# (open-meteo/open-meteo#2330) stopped production syncs, and S3 does not
+# depend on which server DNS picks. With a commercial key it goes to the
+# customer- host and carries the key, like every data request (item 8).
 .openmeteo_meta_url <- function(product, model, api_key = NULL) {
   name <- .openmeteo_meta_name(product, model)
   if (is.null(api_key)) {
